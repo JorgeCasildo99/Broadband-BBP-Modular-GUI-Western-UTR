@@ -93,29 +93,53 @@ class ModuleCard(ctk.CTkFrame):
 class DashboardPanel(ctk.CTkFrame):
     def __init__(self, master,
                  open_gp_callback=None,
-                 open_results_callback=None):
+                 open_results_callback=None,
+                 open_config_callback=None):
         super().__init__(master, fg_color="transparent")
 
         self._open_results_callback = open_results_callback
+        self._open_config_callback  = open_config_callback
 
-        # --- TITLE ---
+        # --- TOP BAR: title left, button right ---
+        top_bar = ctk.CTkFrame(self, fg_color="transparent")
+        top_bar.pack(fill="x", padx=20, pady=(20, 0))
+
+        # Left side — title stack
+        title_left = ctk.CTkFrame(top_bar, fg_color="transparent")
+        title_left.pack(side="left")
+
         ctk.CTkLabel(
-            self,
+            title_left,
             text="BBP Modular Interface — Method Selection",
             font=res.FONT_TITLE,
             text_color="white"
-        ).pack(pady=(20, 4))
+        ).pack(anchor="w")
 
         ctk.CTkLabel(
-            self,
+            title_left,
             text="SCEC Broadband Platform v22.4.0  —  Select a simulation method to configure",
             font=(res.FONT_LABEL[0], 12),
             text_color="gray"
-        ).pack(pady=(0, 16))
+        ).pack(anchor="w", pady=(2, 0))
+
+        # Right side — Velocity Models button
+        ctk.CTkButton(
+            top_bar,
+            text="⚙  Velocity Models",
+            width=160,
+            height=36,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#444444",
+            text_color="#aaaaaa",
+            hover_color="#2a2a2a",
+            font=(res.FONT_LABEL[0], 12),
+            command=self._open_config
+        ).pack(side="right", padx=(10, 0))
 
         # --- CARD GRID: 4 columns ---
         grid = ctk.CTkFrame(self, fg_color="transparent")
-        grid.pack(fill="both", expand=True, padx=20)
+        grid.pack(fill="both", expand=True, padx=20, pady=(12, 0))
 
         for col in range(4):
             grid.grid_columnconfigure(col, weight=1)
@@ -204,3 +228,7 @@ class DashboardPanel(ctk.CTkFrame):
     def _open_results_history(self):
         if self._open_results_callback:
             self._open_results_callback()
+
+    def _open_config(self):
+        if self._open_config_callback:
+            self._open_config_callback()

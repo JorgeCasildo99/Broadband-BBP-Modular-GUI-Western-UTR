@@ -25,6 +25,7 @@ from ui.GravesAndPitarka.GravesAndPitarkaPanel import GravesAndPitarkaPanel
 from ui.SimulationPanel import SimulationPanel
 from ui.results.ResultsPanel        import ResultsPanel
 from ui.results.ResultsHistoryPanel import ResultsHistoryPanel
+from ui.ConfigurationPanel          import ConfigurationPanel
 
 
 class MainPanel(ctk.CTk):
@@ -209,9 +210,14 @@ class MainPanel(ctk.CTk):
         self.dashboard = DashboardPanel(
             self.container,
             open_gp_callback      = self.show_rupture_module,
-            open_results_callback = self.open_results_history
+            open_results_callback = self.open_results_history,
+            open_config_callback  = self.open_configuration_panel
         )
         self.dashboard.pack(fill="both", expand=True)
+
+    def open_configuration_panel(self):
+        """Opens the Velocity Model Configuration panel as a popup."""
+        ConfigurationPanel(self)
 
     def open_results_history(self):
         """Opens the ResultsHistoryPanel as a full window from the Dashboard."""
