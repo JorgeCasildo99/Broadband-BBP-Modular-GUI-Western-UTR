@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(BASE_DIR, "core"))
 import core.Resources as res
 from core.AppConfig import AppConfig
 from core.WSLBridge import WSLBridge
+from ui.results.ComparisonPanel import ComparisonPanel
 
 
 class ResultsHistoryPanel(ctk.CTkToplevel):
@@ -79,6 +80,16 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             hover_color="#444444",
             command=self.destroy
         ).pack(side="right", padx=15, pady=14)
+
+        ctk.CTkButton(
+            bar,
+            text="⇄  Compare Runs",
+            width=140, height=32,
+            fg_color=res.COLOR_PRIMARY,
+            hover_color="#004070",
+            font=(res.FONT_LABEL[0], 11),
+            command=self._open_comparison
+        ).pack(side="right", padx=(0, 8), pady=14)
 
         self.lbl_count = ctk.CTkLabel(
             bar,
@@ -596,6 +607,10 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     # OPEN SESSION
     # ------------------------------------------------------------------
+
+    def _open_comparison(self):
+        """Opens the ComparisonPanel directly from the history panel."""
+        ComparisonPanel(self)
 
     def _open_session(self, session):
         """

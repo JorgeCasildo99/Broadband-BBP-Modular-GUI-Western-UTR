@@ -94,17 +94,18 @@ class DashboardPanel(ctk.CTkFrame):
     def __init__(self, master,
                  open_gp_callback=None,
                  open_results_callback=None,
-                 open_config_callback=None):
+                 open_config_callback=None,
+                 open_validation_callback=None):
         super().__init__(master, fg_color="transparent")
 
-        self._open_results_callback = open_results_callback
-        self._open_config_callback  = open_config_callback
+        self._open_results_callback    = open_results_callback
+        self._open_config_callback     = open_config_callback
+        self._open_validation_callback = open_validation_callback
 
-        # --- TOP BAR: title left, button right ---
+        # --- TOP BAR: title left, buttons right ---
         top_bar = ctk.CTkFrame(self, fg_color="transparent")
         top_bar.pack(fill="x", padx=20, pady=(20, 0))
 
-        # Left side — title stack
         title_left = ctk.CTkFrame(top_bar, fg_color="transparent")
         title_left.pack(side="left")
 
@@ -122,20 +123,33 @@ class DashboardPanel(ctk.CTkFrame):
             text_color="gray"
         ).pack(anchor="w", pady=(2, 0))
 
-        # Right side — Velocity Models button
+        # Right side buttons
+        btn_right = ctk.CTkFrame(top_bar, fg_color="transparent")
+        btn_right.pack(side="right")
+
         ctk.CTkButton(
-            top_bar,
+            btn_right,
             text="⚙  Velocity Models",
-            width=160,
-            height=36,
+            width=160, height=36,
             fg_color="transparent",
-            border_width=1,
-            border_color="#444444",
+            border_width=1, border_color="#444444",
             text_color="#aaaaaa",
             hover_color="#2a2a2a",
             font=(res.FONT_LABEL[0], 12),
             command=self._open_config
-        ).pack(side="right", padx=(10, 0))
+        ).pack(side="right", padx=(8, 0))
+
+        ctk.CTkButton(
+            btn_right,
+            text="✓  Validation",
+            width=130, height=36,
+            fg_color="transparent",
+            border_width=1, border_color="#7a6a00",
+            text_color="#ffdd00",
+            hover_color="#1a1600",
+            font=(res.FONT_LABEL[0], 12),
+            command=self._open_validation
+        ).pack(side="right", padx=(0, 0))
 
         # --- CARD GRID: 4 columns ---
         grid = ctk.CTkFrame(self, fg_color="transparent")
@@ -232,3 +246,7 @@ class DashboardPanel(ctk.CTkFrame):
     def _open_config(self):
         if self._open_config_callback:
             self._open_config_callback()
+
+    def _open_validation(self):
+        if self._open_validation_callback:
+            self._open_validation_callback()

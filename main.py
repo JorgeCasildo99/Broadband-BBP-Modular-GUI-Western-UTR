@@ -26,6 +26,7 @@ from ui.SimulationPanel import SimulationPanel
 from ui.results.ResultsPanel        import ResultsPanel
 from ui.results.ResultsHistoryPanel import ResultsHistoryPanel
 from ui.ConfigurationPanel          import ConfigurationPanel
+from ui.ValidationPanel             import ValidationPanel
 
 
 class MainPanel(ctk.CTk):
@@ -209,15 +210,12 @@ class MainPanel(ctk.CTk):
 
         self.dashboard = DashboardPanel(
             self.container,
-            open_gp_callback      = self.show_rupture_module,
-            open_results_callback = self.open_results_history,
-            open_config_callback  = self.open_configuration_panel
+            open_gp_callback         = self.show_rupture_module,
+            open_results_callback    = self.open_results_history,
+            open_config_callback     = self.open_configuration_panel,
+            open_validation_callback = self.open_validation_panel
         )
         self.dashboard.pack(fill="both", expand=True)
-
-    def open_configuration_panel(self):
-        """Opens the Velocity Model Configuration panel as a popup."""
-        ConfigurationPanel(self)
 
     def open_results_history(self):
         """Opens the ResultsHistoryPanel as a full window from the Dashboard."""
@@ -225,6 +223,35 @@ class MainPanel(ctk.CTk):
             master          = self,
             on_open_results = self.show_results_panel
         )
+
+    def open_configuration_panel(self):
+        """Opens the Velocity Model Configuration panel as a popup."""
+        ConfigurationPanel(self)
+
+    def open_validation_panel(self):
+        """Opens the Validation Simulation panel as a popup."""
+        ValidationPanel(
+            self,
+            on_results_callback=self._on_validation_results
+        )
+
+    def _on_validation_results(self, run_id, event):
+        """Called when a validation run completes and user clicks View Results."""
+        if not run_id:
+            return
+
+        # Set AppConfig so ResultsPanel can find the output files
+        bbp_home = __import__('core.WSLBridge', fromlist=['WSLBridge']).WSLBridge.get_wsl_home()
+        bbp_data_result = __import__('core.WSLBridge', fromlist=['WSLBridge']).WSLBridge.run_command(
+            "echo $BBP_DATA_DIR"
+        )
+        bbp_data = bbp_data_result.stdout.strip() or f"{bbp_home}/bbp_data"
+
+        AppConfig.current_run_id    = run_id
+        AppConfig.current_base_name = event.get("short_name", run_id) if event else run_id
+        AppConfig.out_path          = f"{bbp_data}/outdata/{run_id}"
+
+        ResultsPanel(self)
 
     def show_rupture_module(self):
         """

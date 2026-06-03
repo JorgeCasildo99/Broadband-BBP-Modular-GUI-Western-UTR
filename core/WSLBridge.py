@@ -592,3 +592,68 @@ class WSLBridge:
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
+
+    # ------------------------------------------------------------------
+    # RUN BBP VALIDATION (STREAMING — interactive stdin mode)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def run_validation_stream(cls, event_number, method_number,
+                              on_output, on_finish):
+        """
+        Runs a BBP validation simulation in interactive mode by piping
+        the three answers BBP expects: y, event_number, method_number.
+        Streams stdout line by line to on_output callback.
+
+        Args:
+            event_number  (int)     : BBP event number (e.g. 1 for Chino Hills)
+            method_number (int)     : BBP method number (e.g. 1 for GP)
+            on_output     (callable): Called with each output line (str)
+            on_finish     (callable): Called on end with (bool, str, str)
+                                      Args: success, error_msg, run_id
+        """
+        import threading
+
+        def _run():
+            try:
+                env_path = cls._get_bbp_env_path()
+
+                # Build the command — pipe three answers to run_bbp.py
+                # BBP asks: validation? → y
+                #           event?      → event_number
+                #           method?     → method_number
+                answers  = f"y\n{event_number}\n{method_number}\n"
+                bbp_cmd  = (
+                    f"source '{env_path}' && "
+                    f"echo -e '{answers.strip()}' | run_bbp.py"
+                )
+
+                if cls.IS_WINDOWS:
+                    full_cmd = ["wsl", "bash", "-c", bbp_cmd]
+                else:
+                    full_cmd = ["bash", "-c", bbp_cmd]
+
+                process = subprocess.Popen(
+                    full_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True
+                )
+
+                for line in process.stdout:
+                    on_output(line)
+
+                process.wait()
+                success = process.returncode == 0
+
+                if success:
+                    run_id = cls.get_bbp_run_id()
+                    on_finish(True, "", run_id)
+                else:
+                    on_finish(False, "BBP validation exited with errors.", "")
+
+            except Exception as e:
+                on_finish(False, str(e), "")
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()

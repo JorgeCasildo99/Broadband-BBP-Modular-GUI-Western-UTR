@@ -45,9 +45,14 @@ class ResultsPanel(ctk.CTkToplevel):
         self._fas_folder  = f"{self._outdata}/FAS"
         self._stations    = []
 
-        self._src_file       = self._find_param_file(".src")
-        self._stl_file       = self._find_param_file(".stl")
+        self._src_file        = self._find_param_file(".src")
+        self._stl_file        = self._find_param_file(".stl")
         self._bbp_xml_content = self._read_bbp_xml()
+
+        # Detect if this is a validation run by looking for GoF files
+        self._is_validation   = self._detect_validation()
+        self._val_event_name  = self._detect_val_event_name()
+        self._val_event_short = self._detect_val_event_short()
 
         self._build_ui()
         self.after(200, self._on_ready)
@@ -101,6 +106,54 @@ class ResultsPanel(ctk.CTkToplevel):
         xml_path = f"{self._outdata}/{self._run_id}.xml"
         ok, content = WSLBridge.read_wsl_file(xml_path)
         return content if ok else ""
+
+    def _detect_validation(self):
+        """
+        Returns True if this run is a validation simulation.
+        Detection: checks for GoF PNG files in outdata folder.
+        GoF files only exist in validation runs.
+        """
+        result = WSLBridge.run_command(
+            f"ls '{self._outdata}'/gof-*.png 2>/dev/null | head -1"
+        )
+        return bool(result.stdout.strip())
+
+    def _detect_val_event_name(self):
+        """
+        Extracts validation event name from GoF filename.
+        e.g. gof-map-CHINOH-79241-rotd50.png → Chino Hills
+        """
+        if not self._is_validation:
+            return ""
+        result = WSLBridge.run_command(
+            f"ls '{self._outdata}'/gof-*.png 2>/dev/null | head -1"
+        )
+        fname = os.path.basename(result.stdout.strip())
+        # Map short codes to full names
+        name_map = {
+            "CHINOH": "Chino Hills",
+            "NR"    : "Northridge 1994",
+            "WHITT" : "Whittier Narrows 1987",
+            "GMPE"  : "GMPE Validation",
+        }
+        for code, name in name_map.items():
+            if code in fname.upper():
+                return name
+        # Fallback: extract from filename
+        parts = fname.split("-")
+        return parts[1] if len(parts) > 1 else "Validation"
+
+    def _detect_val_event_short(self):
+        """Extracts the short event code from GoF filename for file pattern matching."""
+        if not self._is_validation:
+            return ""
+        result = WSLBridge.run_command(
+            f"ls '{self._outdata}'/gof-map-*.png 2>/dev/null | head -1"
+        )
+        fname = os.path.basename(result.stdout.strip())
+        # gof-map-CHINOH-79241-rotd50.png → CHINOH
+        parts = fname.split("-")
+        return parts[2] if len(parts) > 2 else ""
 
     def _get_velocity_model(self):
         """Extracts velocity model name from BBP XML."""
@@ -176,6 +229,19 @@ class ResultsPanel(ctk.CTkToplevel):
             font=(res.FONT_TITLE[0], 18, "bold"), text_color="white"
         ).pack(side="left", padx=10, pady=12)
 
+        # Validation badge — only shown for validation runs
+        self._val_badge = ctk.CTkLabel(
+            bar,
+            text=f"✓ VALIDATION — {self._val_event_name}" if self._is_validation else "",
+            font=(res.FONT_LABEL[0], 11, "bold"),
+            text_color="#ffdd00",
+            fg_color="#1a1500",
+            corner_radius=4,
+            padx=8, pady=3
+        )
+        if self._is_validation:
+            self._val_badge.pack(side="left", padx=(0, 10), pady=12)
+
         session = os.path.basename(AppConfig.current_session_folder) \
             if AppConfig.current_session_folder else "N/A"
         ctk.CTkLabel(
@@ -249,7 +315,11 @@ class ResultsPanel(ctk.CTkToplevel):
         )
         self.tabs.pack(fill="both", expand=True)
 
-        for name in ["Simulation Info", "Source & Stations", "Station Map", "Rupture Map"]:
+        tab_names = ["Simulation Info", "Source & Stations", "Station Map", "Rupture Map"]
+        if self._is_validation:
+            tab_names.append("GoF Summary")
+
+        for name in tab_names:
             self.tabs.add(name)
 
         self._profile = AppConfig.simulation_profile
@@ -303,6 +373,10 @@ class ResultsPanel(ctk.CTkToplevel):
             self.lbl_count.configure(text="No station output files found")
             self._render_table([])
 
+        # GoF Summary — validation only
+        if self._is_validation:
+            self._build_gof_tab()
+
     def _build_unavailable_tab(self, tab_name, message):
         tab   = self.tabs.tab(tab_name)
         frame = ctk.CTkFrame(tab, fg_color="transparent")
@@ -323,8 +397,142 @@ class ResultsPanel(ctk.CTkToplevel):
         ).pack(expand=True)
 
     # ------------------------------------------------------------------
-    # SIMULATION INFO TAB
+    # GoF SUMMARY TAB (validation only)
     # ------------------------------------------------------------------
+
+    def _build_gof_tab(self):
+        """
+        Builds the GoF Summary tab for validation runs.
+        Shows all 5 GoF plots: Map, Dist Linear, Dist Log, Vs30, FAS GoF.
+        """
+        tab    = self.tabs.tab("GoF Summary")
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Header
+        hdr = ctk.CTkFrame(
+            scroll, fg_color="#1a1500",
+            corner_radius=6, border_width=1, border_color="#3a3000"
+        )
+        hdr.pack(fill="x", pady=(0, 12))
+
+        title_row = ctk.CTkFrame(hdr, fg_color="transparent")
+        title_row.pack(fill="x", padx=14, pady=(10, 2))
+
+        ctk.CTkLabel(
+            title_row,
+            text=f"Goodness-of-Fit Summary — {self._val_event_name}",
+            font=(res.FONT_LABEL[0], 15, "bold"),
+            text_color="#ffdd00"
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            title_row,
+            text=f"Run ID: {self._run_id}",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="#888800"
+        ).pack(side="right")
+
+        ctk.CTkLabel(
+            hdr,
+            text=(
+                "GoF plots compare synthetic seismograms against real recordings. "
+                "Green = good fit, red = poor fit. "
+                "These plots are only available for validation simulations."
+            ),
+            font=(res.FONT_LABEL[0], 11),
+            text_color="#888855",
+            wraplength=900, justify="left"
+        ).pack(anchor="w", padx=14, pady=(0, 10))
+
+        # Find all GoF files dynamically
+        gof_result = WSLBridge.run_command(
+            f"ls '{self._outdata}'/gof-*.png 2>/dev/null"
+        )
+        gof_files = [
+            f.strip() for f in gof_result.stdout.strip().splitlines()
+            if f.strip()
+        ]
+
+        if not gof_files:
+            ctk.CTkLabel(
+                scroll,
+                text="No GoF plots found in output folder.\n"
+                     "GoF plots are generated by RotD50GoF and FASGoF modules.",
+                font=(res.FONT_LABEL[0], 13),
+                text_color="gray"
+            ).pack(pady=40)
+            return
+
+        # GoF plot labels based on filename patterns
+        def _gof_label(fname):
+            base = os.path.basename(fname)
+            if "gof-map"         in base: return "RotD50 Map GoF"
+            if "dist-linear"     in base: return "RotD50 Distance Bias (Linear)"
+            if "dist-log"        in base: return "RotD50 Distance Bias (Log)"
+            if "vs30"            in base: return "RotD50 Vs30 GoF"
+            if "-fas"            in base: return "FAS GoF"
+            return os.path.basename(fname)
+
+        def _gof_desc(fname):
+            base = os.path.basename(fname)
+            if "gof-map"     in base:
+                return "Geographic map showing GoF score per station. Green = good, red = poor fit."
+            if "dist-linear" in base:
+                return "GoF score vs epicentral distance (linear scale). Reveals distance-dependent bias."
+            if "dist-log"    in base:
+                return "GoF score vs epicentral distance (log scale). Better resolution at close distances."
+            if "vs30"        in base:
+                return "GoF score vs Vs30 site condition. Reveals site amplification modeling quality."
+            if "-fas"        in base:
+                return "Fourier Amplitude Spectra GoF across all stations and frequency ranges."
+            return ""
+
+        # Preferred display order
+        order = ["gof-map", "dist-linear", "dist-log", "vs30", "-fas"]
+        def _sort_key(f):
+            base = os.path.basename(f)
+            for i, pat in enumerate(order):
+                if pat in base:
+                    return i
+            return 99
+
+        gof_files.sort(key=_sort_key)
+
+        # Render each GoF plot
+        for gof_path in gof_files:
+            label = _gof_label(gof_path)
+            desc  = _gof_desc(gof_path)
+
+            # Section header
+            sec_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+            sec_frame.pack(fill="x", pady=(8, 2))
+            ctk.CTkLabel(
+                sec_frame, text=label,
+                font=(res.FONT_LABEL[0], 12, "bold"),
+                text_color=res.COLOR_PRIMARY
+            ).pack(side="left")
+            sep = ctk.CTkFrame(sec_frame, fg_color="#2a2a2a", height=1)
+            sep.pack(side="left", fill="x", expand=True, padx=(10, 0), pady=6)
+
+            if desc:
+                ctk.CTkLabel(
+                    scroll, text=desc,
+                    font=(res.FONT_LABEL[0], 10),
+                    text_color="#555555",
+                    justify="left"
+                ).pack(anchor="w", pady=(0, 4))
+
+            # Image
+            img_frame = ctk.CTkFrame(
+                scroll, fg_color="#0d0d0d",
+                corner_radius=6, border_width=1, border_color="#222222"
+            )
+            img_frame.pack(fill="x", pady=(0, 12))
+
+            _image_tab(img_frame, gof_path,
+                       fallback_msg=f"{label} not found.",
+                       master=self)
 
     def _build_info_tab(self):
         tab    = self.tabs.tab("Simulation Info")
@@ -675,5 +883,7 @@ class ResultsPanel(ctk.CTkToplevel):
         StationDetailPanel(
             self, station_id,
             self._outdata, self._fas_folder,
-            self._run_id, self._profile
+            self._run_id, self._profile,
+            is_validation    = self._is_validation,
+            val_event_short  = self._val_event_short
         )
