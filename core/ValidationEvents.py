@@ -1,8 +1,8 @@
 # ValidationEvents.py — core/ValidationEvents.py
 # -------------------------------------------------------
 # Registry of all known BBP v22.4.0 validation events.
-# Maps each event to its required velocity model,
-# BBP event number, file paths, and metadata.
+# Folder names and file paths verified against actual
+# BBP installation on the target machine.
 # Source: https://github.com/SCECcode/bbp
 # -------------------------------------------------------
 
@@ -17,10 +17,14 @@ from core.WSLBridge import WSLBridge
 
 # ------------------------------------------------------------------
 # COMPLETE EVENT CATALOG — BBP v22.4.0
-# bbp_number: the number you type when BBP asks "? [event number]"
+# bbp_number: the number BBP shows when asking "? [event number]"
+# bbp_folder:  exact folder name inside ~/bbp_val/
+# src_file:    path relative to bbp_folder/
+# stl_file:    path relative to bbp_folder/
 # ------------------------------------------------------------------
 
 VALIDATION_EVENTS = [
+    # ── REAL HISTORICAL EVENTS ──────────────────────────────────────
     {
         "bbp_number"    : 1,
         "name"          : "Chino Hills",
@@ -42,150 +46,6 @@ VALIDATION_EVENTS = [
         ),
     },
     {
-        "bbp_number"    : 4,
-        "name"          : "GMPE 5.5rv SoCal 20km",
-        "short_name"    : "GMPE_5p5rv_SoCal_20km",
-        "bbp_folder"    : "GMPE_5p5rv_SoCal_20km",
-        "magnitude"     : "Mw 5.5 (reverse)",
-        "date"          : "Synthetic",
-        "region"        : "Southern California",
-        "depth_km"      : 8.0,
-        "stations"      : 20,
-        "required_model": "LABasin500",
-        "src_file"      : "common/gmpe_5p5rv_socal_20km.src",
-        "stl_file"      : "common/gmpe_5p5rv_socal_20km.stl",
-        "description"   : (
-            "GMPE validation scenario: Mw 5.5 reverse-fault event "
-            "at 20 km distance in Southern California."
-        ),
-    },
-    {
-        "bbp_number"    : 5,
-        "name"          : "GMPE 5.5rv SoCal 50km",
-        "short_name"    : "GMPE_5p5rv_SoCal_50km",
-        "bbp_folder"    : "GMPE_5p5rv_SoCal_50km",
-        "magnitude"     : "Mw 5.5 (reverse)",
-        "date"          : "Synthetic",
-        "region"        : "Southern California",
-        "depth_km"      : 8.0,
-        "stations"      : 20,
-        "required_model": "LABasin500",
-        "src_file"      : "common/gmpe_5p5rv_socal_50km.src",
-        "stl_file"      : "common/gmpe_5p5rv_socal_50km.stl",
-        "description"   : (
-            "GMPE validation scenario: Mw 5.5 reverse-fault event "
-            "at 50 km distance in Southern California."
-        ),
-    },
-    {
-        "bbp_number"    : 8,
-        "name"          : "GMPE 6.2ss SoCal 20km",
-        "short_name"    : "GMPE_6p2ss_SoCal_20km",
-        "bbp_folder"    : "GMPE_6p2ss_SoCal_20km",
-        "magnitude"     : "Mw 6.2 (strike-slip)",
-        "date"          : "Synthetic",
-        "region"        : "Southern California",
-        "depth_km"      : 8.0,
-        "stations"      : 20,
-        "required_model": "LABasin500",
-        "src_file"      : "common/gmpe_6p2ss_socal_20km.src",
-        "stl_file"      : "common/gmpe_6p2ss_socal_20km.stl",
-        "description"   : (
-            "GMPE validation scenario: Mw 6.2 strike-slip event "
-            "at 20 km distance in Southern California."
-        ),
-    },
-    {
-        "bbp_number"    : 9,
-        "name"          : "GMPE 6.2ss SoCal 50km",
-        "short_name"    : "GMPE_6p2ss_SoCal_50km",
-        "bbp_folder"    : "GMPE_6p2ss_SoCal_50km",
-        "magnitude"     : "Mw 6.2 (strike-slip)",
-        "date"          : "Synthetic",
-        "region"        : "Southern California",
-        "depth_km"      : 8.0,
-        "stations"      : 20,
-        "required_model": "LABasin500",
-        "src_file"      : "common/gmpe_6p2ss_socal_50km.src",
-        "stl_file"      : "common/gmpe_6p2ss_socal_50km.stl",
-        "description"   : (
-            "GMPE validation scenario: Mw 6.2 strike-slip event "
-            "at 50 km distance in Southern California."
-        ),
-    },
-    {
-        "bbp_number"    : 12,
-        "name"          : "GMPE 6.6rv SoCal 20km",
-        "short_name"    : "GMPE_6p6rv_SoCal_20km",
-        "bbp_folder"    : "GMPE_6p6rv_SoCal_20km",
-        "magnitude"     : "Mw 6.6 (reverse)",
-        "date"          : "Synthetic",
-        "region"        : "Southern California",
-        "depth_km"      : 8.0,
-        "stations"      : 20,
-        "required_model": "LABasin500",
-        "src_file"      : "common/gmpe_6p6rv_socal_20km.src",
-        "stl_file"      : "common/gmpe_6p6rv_socal_20km.stl",
-        "description"   : (
-            "GMPE validation scenario: Mw 6.6 reverse-fault event "
-            "at 20 km distance in Southern California."
-        ),
-    },
-    {
-        "bbp_number"    : 13,
-        "name"          : "GMPE 6.6rv SoCal 50km",
-        "short_name"    : "GMPE_6p6rv_SoCal_50km",
-        "bbp_folder"    : "GMPE_6p6rv_SoCal_50km",
-        "magnitude"     : "Mw 6.6 (reverse)",
-        "date"          : "Synthetic",
-        "region"        : "Southern California",
-        "depth_km"      : 8.0,
-        "stations"      : 20,
-        "required_model": "LABasin500",
-        "src_file"      : "common/gmpe_6p6rv_socal_50km.src",
-        "stl_file"      : "common/gmpe_6p6rv_socal_50km.stl",
-        "description"   : (
-            "GMPE validation scenario: Mw 6.6 reverse-fault event "
-            "at 50 km distance in Southern California."
-        ),
-    },
-    {
-        "bbp_number"    : 16,
-        "name"          : "GMPE 6.6ss SoCal 20km",
-        "short_name"    : "GMPE_6p6ss_SoCal_20km",
-        "bbp_folder"    : "GMPE_6p6ss_SoCal_20km",
-        "magnitude"     : "Mw 6.6 (strike-slip)",
-        "date"          : "Synthetic",
-        "region"        : "Southern California",
-        "depth_km"      : 8.0,
-        "stations"      : 20,
-        "required_model": "LABasin500",
-        "src_file"      : "common/gmpe_6p6ss_socal_20km.src",
-        "stl_file"      : "common/gmpe_6p6ss_socal_20km.stl",
-        "description"   : (
-            "GMPE validation scenario: Mw 6.6 strike-slip event "
-            "at 20 km distance in Southern California."
-        ),
-    },
-    {
-        "bbp_number"    : 17,
-        "name"          : "GMPE 6.6ss SoCal 50km",
-        "short_name"    : "GMPE_6p6ss_SoCal_50km",
-        "bbp_folder"    : "GMPE_6p6ss_SoCal_50km",
-        "magnitude"     : "Mw 6.6 (strike-slip)",
-        "date"          : "Synthetic",
-        "region"        : "Southern California",
-        "depth_km"      : 8.0,
-        "stations"      : 20,
-        "required_model": "LABasin500",
-        "src_file"      : "common/gmpe_6p6ss_socal_50km.src",
-        "stl_file"      : "common/gmpe_6p6ss_socal_50km.stl",
-        "description"   : (
-            "GMPE validation scenario: Mw 6.6 strike-slip event "
-            "at 50 km distance in Southern California."
-        ),
-    },
-    {
         "bbp_number"    : 18,
         "name"          : "Northridge 1994",
         "short_name"    : "NR",
@@ -200,7 +60,7 @@ VALIDATION_EVENTS = [
         "stl_file"      : "common/nr_v19_06_2.stl",
         "description"   : (
             "The 1994 Northridge earthquake caused widespread damage "
-            "across the Los Angeles area. It is one of the most important "
+            "across the Los Angeles area. One of the most important "
             "validation events for the LA Basin velocity model."
         ),
     },
@@ -215,28 +75,175 @@ VALIDATION_EVENTS = [
         "depth_km"      : 14.6,
         "stations"      : 30,
         "required_model": "LABasin500",
-        "src_file"      : "common/whittier_v19_06_1.src",
-        "stl_file"      : "common/whittier_v19_06_1.stl",
+        "src_file"      : "common/whittier_v12_11_0_fs.src",
+        "stl_file"      : "common/whittier_v19_06_2.stl",
         "description"   : (
-            "The 1987 Whittier Narrows earthquake was a moderate event "
-            "that caused significant damage in the Los Angeles area. "
-            "Used as a validation event for the LA Basin velocity model."
+            "The 1987 Whittier Narrows earthquake caused significant "
+            "damage in the Los Angeles area. Used as a validation event "
+            "for the LA Basin velocity model."
         ),
     },
-    # --- NOCAL500 events (require NOCAL500) ---
+
+    # ── GMPE SoCal EVENTS (require LABasin500) ───────────────────────
+    {
+        "bbp_number"    : 4,
+        "name"          : "GMPE 5.5rv SoCal 20km",
+        "short_name"    : "GMPE55RV-20-SOCAL",
+        "bbp_folder"    : "GMPE55RV-20-SOCAL",
+        "magnitude"     : "Mw 5.5 (reverse)",
+        "date"          : "Synthetic",
+        "region"        : "Southern California",
+        "depth_km"      : 8.0,
+        "stations"      : 20,
+        "required_model": "LABasin500",
+        "src_file"      : "common/m5_5_rv_socal.src",
+        "stl_file"      : "common/m5_5_rv_socal_20km.stl",
+        "description"   : (
+            "GMPE validation scenario: Mw 5.5 reverse-fault event "
+            "at 20 km distance in Southern California."
+        ),
+    },
+    {
+        "bbp_number"    : 5,
+        "name"          : "GMPE 5.5rv SoCal 50km",
+        "short_name"    : "GMPE55RV-50-SOCAL",
+        "bbp_folder"    : "GMPE55RV-50-SOCAL",
+        "magnitude"     : "Mw 5.5 (reverse)",
+        "date"          : "Synthetic",
+        "region"        : "Southern California",
+        "depth_km"      : 8.0,
+        "stations"      : 20,
+        "required_model": "LABasin500",
+        "src_file"      : "common/m5_5_rv_socal.src",
+        "stl_file"      : "common/m5_5_rv_socal_50km.stl",
+        "description"   : (
+            "GMPE validation scenario: Mw 5.5 reverse-fault event "
+            "at 50 km distance in Southern California."
+        ),
+    },
+    {
+        "bbp_number"    : 8,
+        "name"          : "GMPE 6.2ss SoCal 20km",
+        "short_name"    : "GMPE62SS-20-SOCAL",
+        "bbp_folder"    : "GMPE62SS-20-SOCAL",
+        "magnitude"     : "Mw 6.2 (strike-slip)",
+        "date"          : "Synthetic",
+        "region"        : "Southern California",
+        "depth_km"      : 8.0,
+        "stations"      : 20,
+        "required_model": "LABasin500",
+        "src_file"      : "common/m6_2_ss_socal.src",
+        "stl_file"      : "common/m6_2_ss_socal_20km.stl",
+        "description"   : (
+            "GMPE validation scenario: Mw 6.2 strike-slip event "
+            "at 20 km distance in Southern California."
+        ),
+    },
+    {
+        "bbp_number"    : 9,
+        "name"          : "GMPE 6.2ss SoCal 50km",
+        "short_name"    : "GMPE62SS-50-SOCAL",
+        "bbp_folder"    : "GMPE62SS-50-SOCAL",
+        "magnitude"     : "Mw 6.2 (strike-slip)",
+        "date"          : "Synthetic",
+        "region"        : "Southern California",
+        "depth_km"      : 8.0,
+        "stations"      : 20,
+        "required_model": "LABasin500",
+        "src_file"      : "common/m6_2_ss_socal.src",
+        "stl_file"      : "common/m6_2_ss_socal_50km.stl",
+        "description"   : (
+            "GMPE validation scenario: Mw 6.2 strike-slip event "
+            "at 50 km distance in Southern California."
+        ),
+    },
+    {
+        "bbp_number"    : 12,
+        "name"          : "GMPE 6.6rv SoCal 20km",
+        "short_name"    : "GMPE66RV-20-SOCAL",
+        "bbp_folder"    : "GMPE66RV-20-SOCAL",
+        "magnitude"     : "Mw 6.6 (reverse)",
+        "date"          : "Synthetic",
+        "region"        : "Southern California",
+        "depth_km"      : 8.0,
+        "stations"      : 20,
+        "required_model": "LABasin500",
+        "src_file"      : "common/m6_6_rv_socal.src",
+        "stl_file"      : "common/m6_6_rv_socal_20km.stl",
+        "description"   : (
+            "GMPE validation scenario: Mw 6.6 reverse-fault event "
+            "at 20 km distance in Southern California."
+        ),
+    },
+    {
+        "bbp_number"    : 13,
+        "name"          : "GMPE 6.6rv SoCal 50km",
+        "short_name"    : "GMPE66RV-50-SOCAL",
+        "bbp_folder"    : "GMPE66RV-50-SOCAL",
+        "magnitude"     : "Mw 6.6 (reverse)",
+        "date"          : "Synthetic",
+        "region"        : "Southern California",
+        "depth_km"      : 8.0,
+        "stations"      : 20,
+        "required_model": "LABasin500",
+        "src_file"      : "common/m6_6_rv_socal.src",
+        "stl_file"      : "common/m6_6_rv_socal_50km.stl",
+        "description"   : (
+            "GMPE validation scenario: Mw 6.6 reverse-fault event "
+            "at 50 km distance in Southern California."
+        ),
+    },
+    {
+        "bbp_number"    : 16,
+        "name"          : "GMPE 6.6ss SoCal 20km",
+        "short_name"    : "GMPE66SS-20-SOCAL",
+        "bbp_folder"    : "GMPE66SS-20-SOCAL",
+        "magnitude"     : "Mw 6.6 (strike-slip)",
+        "date"          : "Synthetic",
+        "region"        : "Southern California",
+        "depth_km"      : 8.0,
+        "stations"      : 20,
+        "required_model": "LABasin500",
+        "src_file"      : "common/m6_6_ss_socal.src",
+        "stl_file"      : "common/m6_6_ss_socal_20km.stl",
+        "description"   : (
+            "GMPE validation scenario: Mw 6.6 strike-slip event "
+            "at 20 km distance in Southern California."
+        ),
+    },
+    {
+        "bbp_number"    : 17,
+        "name"          : "GMPE 6.6ss SoCal 50km",
+        "short_name"    : "GMPE66SS-50-SOCAL",
+        "bbp_folder"    : "GMPE66SS-50-SOCAL",
+        "magnitude"     : "Mw 6.6 (strike-slip)",
+        "date"          : "Synthetic",
+        "region"        : "Southern California",
+        "depth_km"      : 8.0,
+        "stations"      : 20,
+        "required_model": "LABasin500",
+        "src_file"      : "common/m6_6_ss_socal.src",
+        "stl_file"      : "common/m6_6_ss_socal_50km.stl",
+        "description"   : (
+            "GMPE validation scenario: Mw 6.6 strike-slip event "
+            "at 50 km distance in Southern California."
+        ),
+    },
+
+    # ── GMPE NoCal EVENTS (require NOCAL500) ─────────────────────────
     {
         "bbp_number"    : 2,
         "name"          : "GMPE 5.5rv NoCal 20km",
-        "short_name"    : "GMPE_5p5rv_NoCal_20km",
-        "bbp_folder"    : "GMPE_5p5rv_NoCal_20km",
+        "short_name"    : "GMPE55RV-20-NOCAL",
+        "bbp_folder"    : "GMPE55RV-20-NOCAL",
         "magnitude"     : "Mw 5.5 (reverse)",
         "date"          : "Synthetic",
         "region"        : "Northern California",
         "depth_km"      : 8.0,
         "stations"      : 20,
         "required_model": "NOCAL500",
-        "src_file"      : "common/gmpe_5p5rv_nocal_20km.src",
-        "stl_file"      : "common/gmpe_5p5rv_nocal_20km.stl",
+        "src_file"      : "common/m5_5_rv_nocal.src",
+        "stl_file"      : "common/m5_5_rv_nocal_20km.stl",
         "description"   : (
             "GMPE validation scenario: Mw 5.5 reverse-fault event "
             "at 20 km distance in Northern California."
@@ -245,16 +252,16 @@ VALIDATION_EVENTS = [
     {
         "bbp_number"    : 3,
         "name"          : "GMPE 5.5rv NoCal 50km",
-        "short_name"    : "GMPE_5p5rv_NoCal_50km",
-        "bbp_folder"    : "GMPE_5p5rv_NoCal_50km",
+        "short_name"    : "GMPE55RV-50-NOCAL",
+        "bbp_folder"    : "GMPE55RV-50-NOCAL",
         "magnitude"     : "Mw 5.5 (reverse)",
         "date"          : "Synthetic",
         "region"        : "Northern California",
         "depth_km"      : 8.0,
         "stations"      : 20,
         "required_model": "NOCAL500",
-        "src_file"      : "common/gmpe_5p5rv_nocal_50km.src",
-        "stl_file"      : "common/gmpe_5p5rv_nocal_50km.stl",
+        "src_file"      : "common/m5_5_rv_nocal.src",
+        "stl_file"      : "common/m5_5_rv_nocal_50km.stl",
         "description"   : (
             "GMPE validation scenario: Mw 5.5 reverse-fault event "
             "at 50 km distance in Northern California."
@@ -263,16 +270,16 @@ VALIDATION_EVENTS = [
     {
         "bbp_number"    : 6,
         "name"          : "GMPE 6.2ss NoCal 20km",
-        "short_name"    : "GMPE_6p2ss_NoCal_20km",
-        "bbp_folder"    : "GMPE_6p2ss_NoCal_20km",
+        "short_name"    : "GMPE62SS-20-NOCAL",
+        "bbp_folder"    : "GMPE62SS-20-NOCAL",
         "magnitude"     : "Mw 6.2 (strike-slip)",
         "date"          : "Synthetic",
         "region"        : "Northern California",
         "depth_km"      : 8.0,
         "stations"      : 20,
         "required_model": "NOCAL500",
-        "src_file"      : "common/gmpe_6p2ss_nocal_20km.src",
-        "stl_file"      : "common/gmpe_6p2ss_nocal_20km.stl",
+        "src_file"      : "common/m6_2_ss_nocal.src",
+        "stl_file"      : "common/m6_2_ss_nocal_20km.stl",
         "description"   : (
             "GMPE validation scenario: Mw 6.2 strike-slip event "
             "at 20 km distance in Northern California."
@@ -281,16 +288,16 @@ VALIDATION_EVENTS = [
     {
         "bbp_number"    : 7,
         "name"          : "GMPE 6.2ss NoCal 50km",
-        "short_name"    : "GMPE_6p2ss_NoCal_50km",
-        "bbp_folder"    : "GMPE_6p2ss_NoCal_50km",
+        "short_name"    : "GMPE62SS-50-NOCAL",
+        "bbp_folder"    : "GMPE62SS-50-NOCAL",
         "magnitude"     : "Mw 6.2 (strike-slip)",
         "date"          : "Synthetic",
         "region"        : "Northern California",
         "depth_km"      : 8.0,
         "stations"      : 20,
         "required_model": "NOCAL500",
-        "src_file"      : "common/gmpe_6p2ss_nocal_50km.src",
-        "stl_file"      : "common/gmpe_6p2ss_nocal_50km.stl",
+        "src_file"      : "common/m6_2_ss_nocal.src",
+        "stl_file"      : "common/m6_2_ss_nocal_50km.stl",
         "description"   : (
             "GMPE validation scenario: Mw 6.2 strike-slip event "
             "at 50 km distance in Northern California."
@@ -299,16 +306,16 @@ VALIDATION_EVENTS = [
     {
         "bbp_number"    : 10,
         "name"          : "GMPE 6.6rv NoCal 20km",
-        "short_name"    : "GMPE_6p6rv_NoCal_20km",
-        "bbp_folder"    : "GMPE_6p6rv_NoCal_20km",
+        "short_name"    : "GMPE66RV-20-NOCAL",
+        "bbp_folder"    : "GMPE66RV-20-NOCAL",
         "magnitude"     : "Mw 6.6 (reverse)",
         "date"          : "Synthetic",
         "region"        : "Northern California",
         "depth_km"      : 8.0,
         "stations"      : 20,
         "required_model": "NOCAL500",
-        "src_file"      : "common/gmpe_6p6rv_nocal_20km.src",
-        "stl_file"      : "common/gmpe_6p6rv_nocal_20km.stl",
+        "src_file"      : "common/m6_6_rv_nocal.src",
+        "stl_file"      : "common/m6_6_rv_nocal_20km.stl",
         "description"   : (
             "GMPE validation scenario: Mw 6.6 reverse-fault event "
             "at 20 km distance in Northern California."
@@ -317,16 +324,16 @@ VALIDATION_EVENTS = [
     {
         "bbp_number"    : 11,
         "name"          : "GMPE 6.6rv NoCal 50km",
-        "short_name"    : "GMPE_6p6rv_NoCal_50km",
-        "bbp_folder"    : "GMPE_6p6rv_NoCal_50km",
+        "short_name"    : "GMPE66RV-50-NOCAL",
+        "bbp_folder"    : "GMPE66RV-50-NOCAL",
         "magnitude"     : "Mw 6.6 (reverse)",
         "date"          : "Synthetic",
         "region"        : "Northern California",
         "depth_km"      : 8.0,
         "stations"      : 20,
         "required_model": "NOCAL500",
-        "src_file"      : "common/gmpe_6p6rv_nocal_50km.src",
-        "stl_file"      : "common/gmpe_6p6rv_nocal_50km.stl",
+        "src_file"      : "common/m6_6_rv_nocal.src",
+        "stl_file"      : "common/m6_6_rv_nocal_50km.stl",
         "description"   : (
             "GMPE validation scenario: Mw 6.6 reverse-fault event "
             "at 50 km distance in Northern California."
@@ -335,16 +342,16 @@ VALIDATION_EVENTS = [
     {
         "bbp_number"    : 14,
         "name"          : "GMPE 6.6ss NoCal 20km",
-        "short_name"    : "GMPE_6p6ss_NoCal_20km",
-        "bbp_folder"    : "GMPE_6p6ss_NoCal_20km",
+        "short_name"    : "GMPE66SS-20-NOCAL",
+        "bbp_folder"    : "GMPE66SS-20-NOCAL",
         "magnitude"     : "Mw 6.6 (strike-slip)",
         "date"          : "Synthetic",
         "region"        : "Northern California",
         "depth_km"      : 8.0,
         "stations"      : 20,
         "required_model": "NOCAL500",
-        "src_file"      : "common/gmpe_6p6ss_nocal_20km.src",
-        "stl_file"      : "common/gmpe_6p6ss_nocal_20km.stl",
+        "src_file"      : "common/m6_6_ss_nocal.src",
+        "stl_file"      : "common/m6_6_ss_nocal_20km.stl",
         "description"   : (
             "GMPE validation scenario: Mw 6.6 strike-slip event "
             "at 20 km distance in Northern California."
@@ -353,16 +360,16 @@ VALIDATION_EVENTS = [
     {
         "bbp_number"    : 15,
         "name"          : "GMPE 6.6ss NoCal 50km",
-        "short_name"    : "GMPE_6p6ss_NoCal_50km",
-        "bbp_folder"    : "GMPE_6p6ss_NoCal_50km",
+        "short_name"    : "GMPE66SS-50-NOCAL",
+        "bbp_folder"    : "GMPE66SS-50-NOCAL",
         "magnitude"     : "Mw 6.6 (strike-slip)",
         "date"          : "Synthetic",
         "region"        : "Northern California",
         "depth_km"      : 8.0,
         "stations"      : 20,
         "required_model": "NOCAL500",
-        "src_file"      : "common/gmpe_6p6ss_nocal_50km.src",
-        "stl_file"      : "common/gmpe_6p6ss_nocal_50km.stl",
+        "src_file"      : "common/m6_6_ss_nocal.src",
+        "stl_file"      : "common/m6_6_ss_nocal_50km.stl",
         "description"   : (
             "GMPE validation scenario: Mw 6.6 strike-slip event "
             "at 50 km distance in Northern California."
@@ -384,13 +391,13 @@ VALIDATION_METHODS = [
 # Validation pipeline modules in order (for progress tracking)
 VALIDATION_MODULES = [
     ("Genslip",       "Generating slip distribution on fault plane..."),
-    ("Jbsim",         "Computing low frequency seismograms (0–1 Hz)..."),
-    ("Hfsims",        "Computing high frequency seismograms (1–10+ Hz)..."),
+    ("Jbsim",         "Computing low frequency seismograms (0-1 Hz)..."),
+    ("Hfsims",        "Computing high frequency seismograms (1-10+ Hz)..."),
     ("WccSiteamp",    "Applying Vs30 site amplification corrections..."),
     ("Match",         "Merging LF and HF broadband seismograms..."),
     ("Plot_Map",      "Generating station map..."),
     ("PlotSeis",      "Plotting seismograms and overlay comparisons..."),
-    ("RotD100",       "Computing RotD50/100 response spectra + GoF..."),
+    ("RotD100",       "Computing RotD50/100 response spectra..."),
     ("RotD50GoF",     "Computing RotD50 goodness-of-fit metrics..."),
     ("FAS",           "Computing Fourier Amplitude Spectra..."),
     ("FASGoF",        "Computing FAS goodness-of-fit metrics..."),
@@ -399,7 +406,7 @@ VALIDATION_MODULES = [
 
 
 # ------------------------------------------------------------------
-# DETECTION — checks installed models and flags available events
+# DETECTION
 # ------------------------------------------------------------------
 
 def get_bbp_val_dir():
@@ -411,16 +418,7 @@ def get_bbp_val_dir():
 def get_events_with_status(installed_model_names=None):
     """
     Returns all validation events with availability status.
-
-    Args:
-        installed_model_names (list|None): List of installed model name strings.
-            If None, scans WSL automatically via VelocityModels.
-
-    Returns:
-        list of dicts — each event dict plus:
-            'available'  : bool — True if required model is installed
-            'missing_model': str — name of missing model, or ""
-            'val_files_ok' : bool — True if src/stl files exist in bbp_val/
+    Checks both model installation and file existence.
     """
     if installed_model_names is None:
         from core.VelocityModels import scan_installed_models
@@ -436,7 +434,7 @@ def get_events_with_status(installed_model_names=None):
         entry["available"]     = model_ok
         entry["missing_model"] = "" if model_ok else event["required_model"]
 
-        # Check if validation input files exist in bbp_val/
+        # Check validation input files
         src_path = f"{val_dir}/{event['bbp_folder']}/{event['src_file']}"
         stl_path = f"{val_dir}/{event['bbp_folder']}/{event['stl_file']}"
         src_ok   = WSLBridge.wsl_path_exists(src_path)
@@ -447,6 +445,8 @@ def get_events_with_status(installed_model_names=None):
 
         result.append(entry)
 
+    # Sort by bbp_number to match BBP's own ordering
+    result.sort(key=lambda e: e["bbp_number"])
     return result
 
 

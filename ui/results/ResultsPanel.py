@@ -131,10 +131,15 @@ class ResultsPanel(ctk.CTkToplevel):
         fname = os.path.basename(result.stdout.strip())
         # Map short codes to full names
         name_map = {
-            "CHINOH": "Chino Hills",
-            "NR"    : "Northridge 1994",
-            "WHITT" : "Whittier Narrows 1987",
-            "GMPE"  : "GMPE Validation",
+            "CHINOH"      : "Chino Hills",
+            "CHINOHILLS"  : "Chino Hills",
+            "NR-"         : "Northridge 1994",
+            "WHITT"       : "Whittier Narrows 1987",
+            "GMPE55RV"    : "GMPE Mw5.5 Reverse",
+            "GMPE62SS"    : "GMPE Mw6.2 Strike-Slip",
+            "GMPE66RV"    : "GMPE Mw6.6 Reverse",
+            "GMPE66SS"    : "GMPE Mw6.6 Strike-Slip",
+            "GMPE"        : "GMPE Validation",
         }
         for code, name in name_map.items():
             if code in fname.upper():
@@ -176,11 +181,44 @@ class ResultsPanel(ctk.CTkToplevel):
         return "LABasin500 (GP default)"
 
     def _get_modules_ran(self):
-        """Extracts the list of modules that ran from the BBP XML."""
+        """
+        Extracts the list of modules that ran.
+        For scenario runs: reads from the BBP XML we generated.
+        For validation runs: reads from the software_status file
+        since the validation XML has a different format.
+        """
         import re
-        if not self._bbp_xml_content:
+
+        # First try the XML (works for scenario runs)
+        if self._bbp_xml_content:
+            modules = re.findall(r'<name>([^<]+)</name>', self._bbp_xml_content)
+            if modules:
+                return modules
+
+        # Fallback: parse software_status file (works for all run types)
+        # Lines like: "Running Genslip" or "Genslip Completed"
+        status_path = f"{self._outdata}/software_status-{self._run_id}.txt"
+        ok, content = WSLBridge.read_wsl_file(status_path)
+        if not ok or not content:
             return []
-        return re.findall(r'<name>([^<]+)</name>', self._bbp_xml_content)
+
+        modules = []
+        seen    = set()
+        # Known BBP module names to detect
+        known = [
+            "Genslip", "Jbsim", "Hfsims", "WccSiteamp", "Match",
+            "Plot_Map", "PlotSeis", "RotD100", "CalculateGMPE",
+            "ObsSeismograms", "GMPEPlot", "GenPlots", "GPGoF",
+            "RotD50GoF", "FAS", "FASGoF", "GenHTML",
+        ]
+        for line in content.splitlines():
+            for mod in known:
+                if mod.lower() in line.lower() and mod not in seen:
+                    modules.append(mod)
+                    seen.add(mod)
+                    break
+
+        return modules
 
     def _on_ready(self):
         try:
@@ -348,9 +386,23 @@ class ResultsPanel(ctk.CTkToplevel):
                 "Add Plot_Map to your pipeline to generate this output."
             )
 
-        # Rupture Map
+        # Rupture Map — try multiple naming patterns
         rupture_map    = f"{self._outdata}/{self._base_name}.png"
         rupture_map_fb = f"{self._outdata}/{self._run_id}.png"
+
+        # For validation runs, scan for any *.srf.png or named rupture PNG
+        if not WSLBridge.wsl_path_exists(rupture_map) and \
+           not WSLBridge.wsl_path_exists(rupture_map_fb):
+            # Scan outdata for any PNG that isn't station_map or gof-*
+            scan = WSLBridge.run_command(
+                f"ls '{self._outdata}'/*.png 2>/dev/null | "
+                f"grep -v 'station_map' | grep -v 'gof-' | "
+                f"grep -v '_gmpe' | grep -v '_seis' | head -1"
+            )
+            candidate = scan.stdout.strip()
+            if candidate:
+                rupture_map = candidate
+
         if WSLBridge.wsl_path_exists(rupture_map):
             self._build_image_tab_content("Rupture Map", rupture_map)
         elif WSLBridge.wsl_path_exists(rupture_map_fb):
@@ -445,7 +497,7 @@ class ResultsPanel(ctk.CTkToplevel):
             wraplength=900, justify="left"
         ).pack(anchor="w", padx=14, pady=(0, 10))
 
-        # Find all GoF files dynamically
+        # Find all GoF files dynamically — includes both gof-* and GMPE summary
         gof_result = WSLBridge.run_command(
             f"ls '{self._outdata}'/gof-*.png 2>/dev/null"
         )
@@ -453,6 +505,16 @@ class ResultsPanel(ctk.CTkToplevel):
             f.strip() for f in gof_result.stdout.strip().splitlines()
             if f.strip()
         ]
+
+        # Also find the main GMPE GoF summary plot (different naming pattern)
+        # e.g. gof-GMPE55RV20SOCAL-513653_r0-30-rd50.png
+        gmpe_gof_result = WSLBridge.run_command(
+            f"ls '{self._outdata}'/gof-*_r0-*.png 2>/dev/null"
+        )
+        for f in gmpe_gof_result.stdout.strip().splitlines():
+            f = f.strip()
+            if f and f not in gof_files:
+                gof_files.append(f)
 
         if not gof_files:
             ctk.CTkLabel(
@@ -472,6 +534,7 @@ class ResultsPanel(ctk.CTkToplevel):
             if "dist-log"        in base: return "RotD50 Distance Bias (Log)"
             if "vs30"            in base: return "RotD50 Vs30 GoF"
             if "-fas"            in base: return "FAS GoF"
+            if "_r0-"            in base: return "RotD50 GMPE Comparison (All Stations)"
             return os.path.basename(fname)
 
         def _gof_desc(fname):
@@ -486,10 +549,12 @@ class ResultsPanel(ctk.CTkToplevel):
                 return "GoF score vs Vs30 site condition. Reveals site amplification modeling quality."
             if "-fas"        in base:
                 return "Fourier Amplitude Spectra GoF across all stations and frequency ranges."
+            if "_r0-"        in base:
+                return "RotD50 response spectra comparison across all stations vs GMPE predictions."
             return ""
 
         # Preferred display order
-        order = ["gof-map", "dist-linear", "dist-log", "vs30", "-fas"]
+        order = ["_r0-", "gof-map", "dist-linear", "dist-log", "vs30", "-fas"]
         def _sort_key(f):
             base = os.path.basename(f)
             for i, pat in enumerate(order):
@@ -533,6 +598,70 @@ class ResultsPanel(ctk.CTkToplevel):
             _image_tab(img_frame, gof_path,
                        fallback_msg=f"{label} not found.",
                        master=self)
+
+        # ── PER-STATION GMPE PLOTS ────────────────────────────────────
+        # These are unique to GMPE validation events
+        gmpe_sta_result = WSLBridge.run_command(
+            f"ls '{self._outdata}'/*_sta-*_gmpe.png 2>/dev/null | head -5"
+        )
+        gmpe_sta_files = [
+            f.strip() for f in gmpe_sta_result.stdout.strip().splitlines()
+            if f.strip()
+        ]
+
+        if gmpe_sta_files:
+            # Count total
+            count_result = WSLBridge.run_command(
+                f"ls '{self._outdata}'/*_sta-*_gmpe.png 2>/dev/null | wc -l"
+            )
+            total_gmpe = count_result.stdout.strip()
+
+            sec_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+            sec_frame.pack(fill="x", pady=(12, 2))
+            ctk.CTkLabel(
+                sec_frame,
+                text=f"Per-Station GMPE Comparison Plots ({total_gmpe} stations)",
+                font=(res.FONT_LABEL[0], 12, "bold"),
+                text_color=res.COLOR_PRIMARY
+            ).pack(side="left")
+            sep = ctk.CTkFrame(sec_frame, fg_color="#2a2a2a", height=1)
+            sep.pack(side="left", fill="x", expand=True, padx=(10, 0), pady=6)
+
+            ctk.CTkLabel(
+                scroll,
+                text="Each plot compares the synthetic RotD50 spectrum against GMPE predictions for one station.",
+                font=(res.FONT_LABEL[0], 10),
+                text_color="#555555"
+            ).pack(anchor="w", pady=(0, 4))
+
+            # Get all station gmpe plots
+            all_gmpe_result = WSLBridge.run_command(
+                f"ls '{self._outdata}'/*_sta-*_gmpe.png 2>/dev/null"
+            )
+            all_gmpe_files = [
+                f.strip() for f in all_gmpe_result.stdout.strip().splitlines()
+                if f.strip()
+            ]
+
+            for gmpe_path in all_gmpe_files:
+                sta_id = os.path.basename(gmpe_path).split("_sta-")[1].replace("_gmpe.png", "")
+                lbl_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+                lbl_frame.pack(fill="x", pady=(4, 0))
+                ctk.CTkLabel(
+                    lbl_frame,
+                    text=f"Station: {sta_id}",
+                    font=(res.FONT_LABEL[0], 10, "bold"),
+                    text_color="#666666"
+                ).pack(anchor="w")
+
+                img_frame = ctk.CTkFrame(
+                    scroll, fg_color="#0d0d0d",
+                    corner_radius=6, border_width=1, border_color="#222222"
+                )
+                img_frame.pack(fill="x", pady=(0, 8))
+                _image_tab(img_frame, gmpe_path,
+                           fallback_msg="GMPE plot not found.",
+                           master=self)
 
     def _build_info_tab(self):
         tab    = self.tabs.tab("Simulation Info")
@@ -596,22 +725,33 @@ class ResultsPanel(ctk.CTkToplevel):
                 border_width=1, border_color="#2a4a2a", corner_radius=6
             )
             mod_frame.pack(fill="x", pady=(0, 12))
-            chip_row = ctk.CTkFrame(mod_frame, fg_color="transparent")
-            chip_row.pack(fill="x", padx=12, pady=10, anchor="w")
 
-            for i, mod in enumerate(modules_ran):
-                ctk.CTkLabel(
-                    chip_row, text=mod,
-                    font=(res.FONT_LABEL[0], 11, "bold"),
-                    text_color="#11CAA0", fg_color="#0a2a1a",
-                    corner_radius=4, padx=8, pady=4
-                ).pack(side="left", padx=(0, 2))
-                if i < len(modules_ran) - 1:
+            # Split into rows of 6 modules each to avoid overflow
+            COLS = 6
+            chunks = [modules_ran[i:i+COLS] for i in range(0, len(modules_ran), COLS)]
+
+            for chunk_idx, chunk in enumerate(chunks):
+                chip_row = ctk.CTkFrame(mod_frame, fg_color="transparent")
+                chip_row.pack(fill="x", padx=12,
+                              pady=(10 if chunk_idx == 0 else 2, 2 if chunk_idx < len(chunks)-1 else 10),
+                              anchor="w")
+
+                for i, mod in enumerate(chunk):
+                    # Global index for arrow logic
+                    global_i = chunk_idx * COLS + i
                     ctk.CTkLabel(
-                        chip_row, text="→",
-                        font=(res.FONT_LABEL[0], 11),
-                        text_color="#444444"
+                        chip_row, text=mod,
+                        font=(res.FONT_LABEL[0], 11, "bold"),
+                        text_color="#11CAA0", fg_color="#0a2a1a",
+                        corner_radius=4, padx=8, pady=4
                     ).pack(side="left", padx=(0, 2))
+                    # Add arrow unless last module overall
+                    if global_i < len(modules_ran) - 1:
+                        ctk.CTkLabel(
+                            chip_row, text="→",
+                            font=(res.FONT_LABEL[0], 11),
+                            text_color="#444444"
+                        ).pack(side="left", padx=(0, 2))
 
         _section_label(scroll, "Linked Files")
         links_frame = ctk.CTkFrame(

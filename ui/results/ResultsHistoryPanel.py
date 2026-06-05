@@ -299,15 +299,54 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
         n = count_result.stdout.strip()
         station_count = f"{n} stations" if n and n != "0" else "No stations"
 
+        # --- DETECT VALIDATION RUN ---
+        # GoF files only exist in validation runs — same logic as ResultsPanel
+        has_gof = WSLBridge.run_command(
+            f"ls '{folder}'/gof-*.png 2>/dev/null | head -1"
+        ).stdout.strip() != ""
+
+        # Also check for GMPE-style GoF (different naming pattern)
+        if not has_gof:
+            has_gof = WSLBridge.run_command(
+                f"ls '{folder}'/*_r0-*.png 2>/dev/null | head -1"
+            ).stdout.strip() != ""
+
+        # Detect validation event name from GoF filename if available
+        val_event_name = ""
+        if has_gof:
+            gof_result = WSLBridge.run_command(
+                f"ls '{folder}'/gof-*.png 2>/dev/null | head -1"
+            )
+            gof_fname = os.path.basename(gof_result.stdout.strip())
+            name_map = {
+                "CHINOH"  : "Chino Hills",
+                "NR"      : "Northridge 1994",
+                "WHITT"   : "Whittier 1987",
+                "GMPE55RV": "GMPE Mw5.5 Reverse",
+                "GMPE62SS": "GMPE Mw6.2 Strike-Slip",
+                "GMPE66RV": "GMPE Mw6.6 Reverse",
+                "GMPE66SS": "GMPE Mw6.6 Strike-Slip",
+            }
+            for code, name in name_map.items():
+                if code in gof_fname.upper():
+                    val_event_name = name
+                    break
+            if not val_event_name:
+                # Fallback: extract from filename
+                parts = gof_fname.split("-")
+                val_event_name = parts[1] if len(parts) > 1 else "Validation"
+
         return {
-            "run_id"        : run_id,
-            "exp_name"      : exp_name,
-            "experimenter"  : experimenter,
-            "date_str"      : date_str,
-            "profile_label" : profile_label,
-            "outdata_path"  : folder,
-            "station_count" : station_count,
-            "complete"      : True,
+            "run_id"          : run_id,
+            "exp_name"        : exp_name,
+            "experimenter"    : experimenter,
+            "date_str"        : date_str,
+            "profile_label"   : profile_label,
+            "outdata_path"    : folder,
+            "station_count"   : station_count,
+            "complete"        : True,
+            "is_validation"   : has_gof,
+            "val_event_name"  : val_event_name,
         }
 
     def _build_run_id_map(self, bbp_xml_path, base_path):
@@ -478,6 +517,8 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             "station_count" : station_count,
             "complete"      : complete,
             "profile_label" : profile_label,
+            "is_validation" : False,
+            "val_event_name": "",
         }
 
     # ------------------------------------------------------------------
@@ -503,12 +544,17 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
 
     def _render_session_row(self, index, session):
         """Renders a single session row. Every row has a View Results button."""
-        row_color = "#252525" if index % 2 == 0 else "#1e1e1e"
+        is_val    = session.get("is_validation", False)
+        row_color = "#1a1500" if is_val else ("#252525" if index % 2 == 0 else "#1e1e1e")
+        brd_color = "#3a3000" if is_val else "#333333"
+        brd_width = 1 if is_val else 0
 
         row = ctk.CTkFrame(
             self.session_scroll,
             fg_color=row_color,
             corner_radius=6,
+            border_width=brd_width,
+            border_color=brd_color,
             height=52
         )
         row.pack(fill="x", pady=3)
@@ -531,23 +577,46 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             text_color="white"
         ).grid(row=0, column=1, padx=12, pady=15, sticky="w")
 
-        # Experimenter + Experiment name
-        experimenter = session.get("experimenter", "")
-        exp_name     = session.get("exp_name", "")
+        # Experimenter + Experiment name OR Validation badge
+        is_validation  = session.get("is_validation", False)
+        val_event_name = session.get("val_event_name", "")
+        experimenter   = session.get("experimenter", "")
+        exp_name       = session.get("exp_name", "")
 
-        if experimenter and exp_name:
-            full_name = f"{experimenter}  /  {exp_name}"
-        elif exp_name:
-            full_name = exp_name
+        name_frame = ctk.CTkFrame(row, fg_color="transparent")
+        name_frame.grid(row=0, column=2, padx=12, pady=10, sticky="w")
+
+        if is_validation:
+            # Yellow validation badge
+            ctk.CTkLabel(
+                name_frame,
+                text="✓ VALIDATION",
+                font=(res.FONT_LABEL[0], 9, "bold"),
+                text_color="#1a1200",
+                fg_color="#ffdd00",
+                corner_radius=4,
+                padx=6, pady=2
+            ).pack(side="left", padx=(0, 6))
+            ctk.CTkLabel(
+                name_frame,
+                text=val_event_name or exp_name or f"Run {session['run_id']}",
+                font=(res.FONT_LABEL[0], 11, "bold"),
+                text_color="#ffdd00"
+            ).pack(side="left")
         else:
-            full_name = f"Run {session['run_id']}"
+            if experimenter and exp_name:
+                full_name = f"{experimenter}  /  {exp_name}"
+            elif exp_name:
+                full_name = exp_name
+            else:
+                full_name = f"Run {session['run_id']}"
 
-        ctk.CTkLabel(
-            row,
-            text=full_name,
-            font=(res.FONT_LABEL[0], 11, "bold"),
-            text_color="white"
-        ).grid(row=0, column=2, padx=12, pady=15, sticky="w")
+            ctk.CTkLabel(
+                name_frame,
+                text=full_name,
+                font=(res.FONT_LABEL[0], 11, "bold"),
+                text_color="white"
+            ).pack(side="left")
 
         # Station count
         ctk.CTkLabel(

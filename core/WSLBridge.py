@@ -644,11 +644,27 @@ class WSLBridge:
                     on_output(line)
 
                 process.wait()
-                success = process.returncode == 0
 
-                if success:
-                    run_id = cls.get_bbp_run_id()
-                    on_finish(True, "", run_id)
+                # BBP sometimes exits with non-zero code even on success
+                # (e.g. FAS module exits non-zero on GMPE events).
+                # Detect success by checking if output files were generated
+                # rather than trusting the return code.
+                run_id = cls.get_bbp_run_id()
+
+                if run_id:
+                    # Check if .vel.bbp files exist — definitive success indicator
+                    bbp_data = cls.run_command("echo $BBP_DATA_DIR").stdout.strip()
+                    if not bbp_data:
+                        home = cls.get_wsl_home()
+                        bbp_data = f"{home}/bbp_data"
+                    check = cls.run_command(
+                        f"ls '{bbp_data}/outdata/{run_id}'/*.vel.bbp 2>/dev/null | wc -l"
+                    )
+                    has_output = check.stdout.strip() not in ("", "0")
+                    if has_output:
+                        on_finish(True, "", run_id)
+                    else:
+                        on_finish(False, "BBP validation exited with errors.", "")
                 else:
                     on_finish(False, "BBP validation exited with errors.", "")
 

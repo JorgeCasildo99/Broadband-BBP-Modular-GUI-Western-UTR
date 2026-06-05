@@ -116,11 +116,21 @@ class StationDetailPanel(ctk.CTkToplevel):
         # Base tabs always present
         tab_names = ["Velocity", "Acceleration", "RotD50/100", "FAS", "Raw Data"]
 
-        # Validation-only tabs
+        # Detect if this is a GMPE event (has _gmpe.png but no overlay/rotd50 comparison)
+        self._is_gmpe = self.is_validation and WSLBridge.wsl_path_exists(
+            f"{self.outdata}/{self.val_event_short}_{self.run_id}_{self.sid}_gmpe.png"
+        )
+
+        # Validation-only tabs — different for GMPE vs real historical events
         if self.is_validation:
-            tab_names.insert(2, "Overlay")
-            tab_names.insert(3, "RotD50 GoF")
-            tab_names.append("FAS Comparison")
+            if self._is_gmpe:
+                # GMPE events: show GMPE comparison tab instead of overlay/rotd50 gof
+                tab_names.insert(2, "GMPE Comparison")
+            else:
+                # Real historical events: show overlay and RotD50 GoF
+                tab_names.insert(2, "Overlay")
+                tab_names.insert(3, "RotD50 GoF")
+                tab_names.append("FAS Comparison")
 
         for name in tab_names:
             self.tabs.add(name)
@@ -129,15 +139,18 @@ class StationDetailPanel(ctk.CTkToplevel):
         self._build_velocity_tab()
         self._build_acceleration_tab()
 
-        # Build validation-only tabs if applicable
+        # Build validation-only tabs
         if self.is_validation:
-            self._build_overlay_tab()
-            self._build_rotd50_gof_tab()
+            if self._is_gmpe:
+                self._build_gmpe_comparison_tab()
+            else:
+                self._build_overlay_tab()
+                self._build_rotd50_gof_tab()
 
         self._build_rotd_combined_tab()
         self._build_fas_tab()
 
-        if self.is_validation:
+        if self.is_validation and not self._is_gmpe:
             self._build_fas_comparison_tab()
 
         self._build_raw_tab()
@@ -551,6 +564,28 @@ class StationDetailPanel(ctk.CTkToplevel):
         scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # For GMPE events FAS folder is empty — show clear message
+        if self._is_gmpe:
+            ctk.CTkFrame(scroll, fg_color="transparent", height=40).pack()
+            ctk.CTkLabel(
+                scroll,
+                text="FAS output not generated for this GMPE event",
+                font=(res.FONT_LABEL[0], 14, "bold"),
+                text_color="#555555"
+            ).pack(pady=(0, 8))
+            ctk.CTkLabel(
+                scroll,
+                text="The FAS module ran but produced no output files.\n"
+                     "BBP's FAS module requires real observed recordings\n"
+                     "to generate comparison plots. GMPE validation events\n"
+                     "use synthetic station configurations without real recordings,\n"
+                     "so the FAS folder is empty even though the module executed.",
+                font=(res.FONT_LABEL[0], 12),
+                text_color="#444444",
+                justify="center"
+            ).pack()
+            return
+
         _section_label(scroll, f"Fourier Amplitude Spectrum — {self.sid}")
 
         img_frame = ctk.CTkFrame(scroll, fg_color="#0d0d0d", corner_radius=6)
@@ -565,6 +600,42 @@ class StationDetailPanel(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     # RAW DATA TAB
     # ------------------------------------------------------------------
+
+    def _build_gmpe_comparison_tab(self):
+        """GMPE validation only: per-station GMPE spectrum comparison plot."""
+        tab    = self.tabs.tab("GMPE Comparison")
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+        notice = ctk.CTkFrame(
+            scroll, fg_color="#1a1500", corner_radius=4,
+            border_width=1, border_color="#3a3000"
+        )
+        notice.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(
+            notice,
+            text="✓  GMPE Validation — Synthetic vs GMPE Prediction",
+            font=(res.FONT_LABEL[0], 11, "bold"),
+            text_color="#ffdd00"
+        ).pack(anchor="w", padx=10, pady=6)
+        ctk.CTkLabel(
+            notice,
+            text="This plot compares the BBP synthetic RotD50 response spectrum "
+                 "against multiple GMPE predictions (ASK14, BSSA14, CB14, CY14) "
+                 "for this station. Synthetic should ideally fall within the GMPE range.",
+            font=(res.FONT_LABEL[0], 10),
+            text_color="#888855",
+            wraplength=800, justify="left"
+        ).pack(anchor="w", padx=10, pady=(0, 8))
+
+        _section_label(scroll, f"GMPE Comparison — {self.sid}")
+        img_frame = ctk.CTkFrame(scroll, fg_color="#0d0d0d", corner_radius=6)
+        img_frame.pack(fill="x", pady=(0, 10))
+
+        gmpe_path = f"{self.outdata}/{self.val_event_short}_{self.run_id}_{self.sid}_gmpe.png"
+        _image_tab(img_frame, gmpe_path,
+                   "GMPE comparison plot not found.",
+                   master=self)
 
     def _build_overlay_tab(self):
         """Validation only: synthetic vs real waveform overlay plot."""
