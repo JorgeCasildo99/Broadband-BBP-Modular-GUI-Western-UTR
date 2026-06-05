@@ -228,6 +228,22 @@ class ComparisonPanel(ctk.CTkToplevel):
         )
         self.menu_sta_a.pack(fill="x", padx=14, pady=(2, 4))
 
+        # Frequency band for Signal A
+        freq_a_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        freq_a_frame.pack(fill="x", padx=14, pady=(2, 4))
+        ctk.CTkLabel(
+            freq_a_frame, text="Band:",
+            font=(res.FONT_LABEL[0], 10), text_color="gray"
+        ).pack(side="left", padx=(0, 6))
+        self._freq_band_a = ctk.StringVar(value="Broadband")
+        ctk.CTkSegmentedButton(
+            freq_a_frame,
+            values=["Broadband", "LF Only", "HF Only"],
+            variable=self._freq_band_a,
+            command=lambda v: self._schedule_load(),
+            font=(res.FONT_LABEL[0], 9), height=24
+        ).pack(side="left", fill="x", expand=True)
+
         self._alpha_a_var, self._lbl_alpha_a, self._slider_a = \
             _opacity_row(parent, "● Opacity A:", COLORS["A"], default=1.0)
         self._slider_a.configure(command=lambda v: self._on_opacity_changed("A", v))
@@ -259,6 +275,24 @@ class ComparisonPanel(ctk.CTkToplevel):
             state="disabled"
         )
         self.menu_sta_b.pack(fill="x", padx=14, pady=(2, 4))
+
+        # Frequency band for Signal B
+        freq_b_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        freq_b_frame.pack(fill="x", padx=14, pady=(2, 4))
+        ctk.CTkLabel(
+            freq_b_frame, text="Band:",
+            font=(res.FONT_LABEL[0], 10), text_color="gray"
+        ).pack(side="left", padx=(0, 6))
+        self._freq_band_b = ctk.StringVar(value="Broadband")
+        self._freq_seg_b = ctk.CTkSegmentedButton(
+            freq_b_frame,
+            values=["Broadband", "LF Only", "HF Only"],
+            variable=self._freq_band_b,
+            command=lambda v: self._schedule_load(),
+            font=(res.FONT_LABEL[0], 9), height=24,
+            state="disabled"
+        )
+        self._freq_seg_b.pack(side="left", fill="x", expand=True)
 
         self._alpha_b_var, self._lbl_alpha_b, self._slider_b = \
             _opacity_row(parent, "● Opacity B:", COLORS["B"], default=1.0)
@@ -328,7 +362,7 @@ class ComparisonPanel(ctk.CTkToplevel):
         self._fas_comp = ctk.StringVar(value="Smoothed EAS")
         self._fas_seg = ctk.CTkSegmentedButton(
             self._fas_comp_frame,
-            values=["H1", "H2", "EAS", "Smoothed EAS"],
+            values=["NS (H1)", "EW (H2)", "EAS", "Smoothed EAS"],
             variable=self._fas_comp,
             command=lambda v: self._schedule_load(),
             font=(res.FONT_LABEL[0], 10), height=26,
@@ -382,6 +416,7 @@ class ComparisonPanel(ctk.CTkToplevel):
         state = "normal" if self._use_b.get() else "disabled"
         self.menu_run_b.configure(state=state)
         self.menu_sta_b.configure(state=state)
+        self._freq_seg_b.configure(state=state)
         if self._use_b.get():
             self._on_run_changed("B")
         else:
@@ -527,16 +562,25 @@ class ComparisonPanel(ctk.CTkToplevel):
             self._load_and_draw_fas()
             return
 
+        # Warn if LF/HF selected — tmpdata may be cleared between runs
+        band_a = self._freq_band_a.get()
+        band_b = self._freq_band_b.get() if self._use_b.get() else "Broadband"
+        if "LF Only" in (band_a, band_b) or "HF Only" in (band_a, band_b):
+            self._set_status(
+                "Loading LF/HF from tmpdata — files may not exist for older runs.",
+                error=False
+            )
+
         # Signal A
         run_a = self._get_run_by_label(self.menu_run_a.get())
         sta_a = self.menu_sta_a.get()
-        self._cache_a = self._load_synthetic(run_a, sta_a)
+        self._cache_a = self._load_synthetic(run_a, sta_a, signal="A")
 
         # Signal B
         if self._use_b.get():
             run_b = self._get_run_by_label(self.menu_run_b.get())
             sta_b = self.menu_sta_b.get()
-            self._cache_b = self._load_synthetic(run_b, sta_b)
+            self._cache_b = self._load_synthetic(run_b, sta_b, signal="B")
         else:
             self._cache_b = None
 
@@ -567,14 +611,41 @@ class ComparisonPanel(ctk.CTkToplevel):
                     continue
         return (t, ns, ew, ud) if t else None
 
-    def _load_synthetic(self, run, station_id):
+    def _load_synthetic(self, run, station_id, signal="A"):
         if not run or not station_id:
             return None
         if station_id.startswith("—") or station_id == _PLACEHOLDER:
             return None
+
+        band = self._freq_band_a.get() if signal == "A" else self._freq_band_b.get()
         ext  = "acc" if self._data_type.get() == "Acceleration" else "vel"
-        path = f"{run['outdata_path']}/{run['run_id']}.{station_id}.{ext}.bbp"
-        return self._parse_bbp(path)
+
+        if band == "Broadband":
+            path = f"{run['outdata_path']}/{run['run_id']}.{station_id}.{ext}.bbp"
+            return self._parse_bbp(path)
+
+        elif band == "LF Only":
+            home    = WSLBridge.get_wsl_home()
+            lf_path = f"{home}/bbp_data/tmpdata/{run['run_id']}/{run['run_id']}.{station_id}-lf.bbp"
+            data    = self._parse_bbp(lf_path)
+            if data:
+                return data
+            lf_path2 = f"{home}/bbp_data/tmpdata/{run['run_id']}/{run['run_id']}.{station_id}.lf.bbp"
+            return self._parse_bbp(lf_path2)
+
+        elif band == "HF Only":
+            home = WSLBridge.get_wsl_home()
+            if self._data_type.get() == "Acceleration":
+                hf_path = f"{home}/bbp_data/tmpdata/{run['run_id']}/{run['run_id']}.{station_id}-hf.acc.bbp"
+            else:
+                hf_path = f"{home}/bbp_data/tmpdata/{run['run_id']}/{run['run_id']}.{station_id}-hf.bbp"
+            data = self._parse_bbp(hf_path)
+            if data:
+                return data
+            hf_path2 = f"{home}/bbp_data/tmpdata/{run['run_id']}/{run['run_id']}.{station_id}.hf.bbp"
+            return self._parse_bbp(hf_path2)
+
+        return None
 
     def _load_observed(self, station_id):
         if not station_id or station_id not in OBS_STATIONS:
@@ -652,6 +723,7 @@ class ComparisonPanel(ctk.CTkToplevel):
 
         for w in self.plot_frame.winfo_children():
             w.destroy()
+        plt.close("all")
 
         if rotd_a is None:
             self._set_status(
@@ -677,17 +749,17 @@ class ComparisonPanel(ctk.CTkToplevel):
 
         periods_a, rotd50_a, rotd100_a = rotd_a
 
-        # Signal A — RotD50 solid, RotD100 dashed
+        # Signal A — RotD50 thicker, RotD100 thinner — both solid
         label_a_50  = f"A RotD50  — {run_a['run_id'] if run_a else '?'} / {sta_a}"
         label_a_100 = f"A RotD100 — {run_a['run_id'] if run_a else '?'} / {sta_a}"
 
         ax.plot(periods_a, rotd50_a,
-                color=COLORS["A"], linewidth=1.0,
+                color=COLORS["A"], linewidth=1.2,
                 alpha=alpha_a, label=label_a_50, zorder=3)
         if rotd100_a:
             ax.plot(periods_a, rotd100_a,
-                    color=COLORS["A"], linewidth=1.0,
-                    linestyle="--", alpha=alpha_a,
+                    color=COLORS["A"], linewidth=0.7,
+                    alpha=alpha_a * 0.7,
                     label=label_a_100, zorder=3)
             ax.fill_between(periods_a, rotd50_a, rotd100_a,
                             alpha=alpha_a * 0.10, color=COLORS["A"])
@@ -717,8 +789,8 @@ class ComparisonPanel(ctk.CTkToplevel):
                     alpha=alpha_b, label=label_b_50, zorder=3)
             if rotd100_b:
                 ax.plot(periods_b, rotd100_b,
-                        color=COLORS["B"], linewidth=1.0,
-                        linestyle="--", alpha=alpha_b,
+                        color=COLORS["B"], linewidth=0.7,
+                        alpha=alpha_b * 0.7,
                         label=label_b_100, zorder=3)
                 ax.fill_between(periods_b, rotd50_b, rotd100_b,
                                 alpha=alpha_b * 0.10, color=COLORS["B"])
@@ -743,7 +815,7 @@ class ComparisonPanel(ctk.CTkToplevel):
         ax.set_ylabel("Spectral Acceleration (g)", color="gray", fontsize=9)
         ax.set_title(
             f"Response Spectra Comparison — {comp}  "
-            f"(solid = RotD50, dashed = RotD100)",
+            f"(thick = RotD50, thin = RotD100)",
             color="white", fontsize=10
         )
         ax.tick_params(colors="gray", labelsize=8)
@@ -883,6 +955,7 @@ class ComparisonPanel(ctk.CTkToplevel):
         """Draws FAS comparison on a log-log chart."""
         for w in self.plot_frame.winfo_children():
             w.destroy()
+        plt.close("all")
 
         if fas_a is None:
             self._set_status(
@@ -901,8 +974,8 @@ class ComparisonPanel(ctk.CTkToplevel):
 
         # Which component to plot
         comp_map = {
-            "H1"          : (1, "FAS H1 (cm/s)"),
-            "H2"          : (2, "FAS H2 (cm/s)"),
+            "NS (H1)"     : (1, "FAS NS / H1 (cm/s)"),
+            "EW (H2)"     : (2, "FAS EW / H2 (cm/s)"),
             "EAS"         : (3, "EAS (cm/s)"),
             "Smoothed EAS": (4, "Smoothed EAS (cm/s)"),
         }
@@ -1077,26 +1150,34 @@ class ComparisonPanel(ctk.CTkToplevel):
 
         alpha_a   = float(self._alpha_a_var.get())
         alpha_b   = float(self._alpha_b_var.get())
-        alpha_obs = 1.0
+
+        # Detect if bands are different — need dual Y-axis
+        band_a = self._freq_band_a.get()
+        band_b = self._freq_band_b.get() if (data_b and self._use_b.get()) else band_a
+        dual_axis = (data_b is not None) and (band_a != band_b)
 
         # Labels with peak amplitude info
         run_a = self._get_run_by_label(self.menu_run_a.get())
         sta_a = self.menu_sta_a.get()
         peak_a = self._peak(data_a)
-        label_a = (f"A — {run_a['run_id'] if run_a else '?'} / {sta_a}"
+        band_labels = {"Broadband": "BB", "LF Only": "LF", "HF Only": "HF"}
+        label_a = (f"A [{band_labels.get(band_a, band_a)}] — "
+                   f"{run_a['run_id'] if run_a else '?'} / {sta_a}"
                    + (f"  (peak: {peak_a:.4f})" if peak_a else ""))
 
-        label_b, label_obs = None, None
+        label_b = None
         if data_b:
             run_b  = self._get_run_by_label(self.menu_run_b.get())
             sta_b  = self.menu_sta_b.get()
             peak_b = self._peak(data_b)
-            label_b = (f"B — {run_b['run_id'] if run_b else '?'} / {sta_b}"
+            label_b = (f"B [{band_labels.get(band_b, band_b)}] — "
+                       f"{run_b['run_id'] if run_b else '?'} / {sta_b}"
                        + (f"  (peak: {peak_b:.4f})" if peak_b else ""))
 
-        # Clear plot frame
+        # Clear plot frame and close old figures
         for w in self.plot_frame.winfo_children():
             w.destroy()
+        plt.close("all")
 
         plt.style.use("dark_background")
         fig, axes = plt.subplots(
@@ -1110,7 +1191,6 @@ class ComparisonPanel(ctk.CTkToplevel):
 
         # --- COMPUTE PEAKS PER COMPONENT ---
         def _component_peaks(data):
-            """Returns list of (peak_abs, peak_val, peak_time) per component."""
             results = []
             for idx in range(3):
                 vals = [data[1], data[2], data[3]][idx]
@@ -1137,14 +1217,17 @@ class ComparisonPanel(ctk.CTkToplevel):
                 vals = [data[1], data[2], data[3]][idx]
                 return vals
 
-            # Signal A — blue solid
+            # Signal A
             ax.plot(data_a[0], _v(data_a, i),
                     color=COLORS["A"], linewidth=0.9,
                     alpha=alpha_a, label=label_a, zorder=3)
+            ax.set_ylabel(f"{comp}\n({unit})",
+                          color=COLORS["A"] if dual_axis else "gray",
+                          fontsize=8, labelpad=4)
 
             # Peak marker for Signal A on dominant component
             if i == dominant_a_idx:
-                pt, pv, _ = peaks_a[i]
+                pv = peaks_a[i][1]
                 ax.scatter([peaks_a[i][2]], [pv],
                            color="#ffffff", s=40, zorder=6,
                            edgecolors=COLORS["A"], linewidths=1.5)
@@ -1153,11 +1236,79 @@ class ComparisonPanel(ctk.CTkToplevel):
                     xy=(peaks_a[i][2], pv),
                     xytext=(peaks_a[i][2], pv * 1.15 if pv > 0 else pv * 0.85),
                     color=COLORS["A"], fontsize=6.5,
-                    arrowprops=dict(arrowstyle="->",
-                                   color=COLORS["A"], lw=0.8)
+                    arrowprops=dict(arrowstyle="->", color=COLORS["A"], lw=0.8)
                 )
 
-            # Signal B — red solid
+            # Signal B
+            if data_b:
+                if dual_axis:
+                    # Twin axis so each signal uses its own scale
+                    ax2 = ax.twinx()
+                    ax2.set_facecolor("none")
+                    ax2.plot(data_b[0], _v(data_b, i),
+                             color=COLORS["B"], linewidth=0.9,
+                             alpha=alpha_b, label=label_b, zorder=3)
+                    ax2.set_ylabel(f"({unit})", color=COLORS["B"],
+                                   fontsize=8, labelpad=4)
+                    ax2.tick_params(colors=COLORS["B"], labelsize=7)
+                    for spine in ax2.spines.values():
+                        spine.set_edgecolor("#2a2a2a")
+
+                    if i == dominant_b_idx:
+                        pv_b = peaks_b[i][1]
+                        ax2.scatter([peaks_b[i][2]], [pv_b],
+                                    color="#ffffff", s=40, zorder=6,
+                                    edgecolors=COLORS["B"], linewidths=1.5)
+                        ax2.annotate(
+                            f"  Peak B: {pv_b:.4f} {unit}",
+                            xy=(peaks_b[i][2], pv_b),
+                            xytext=(peaks_b[i][2], pv_b * 0.75 if pv_b > 0 else pv_b * 1.25),
+                            color=COLORS["B"], fontsize=6.5,
+                            arrowprops=dict(arrowstyle="->", color=COLORS["B"], lw=0.8)
+                        )
+
+                    if i == 0:
+                        # Combine legends from both axes
+                        lines1, labels1 = ax.get_legend_handles_labels()
+                        lines2, labels2 = ax2.get_legend_handles_labels()
+                        legend = ax.legend(
+                            lines1 + lines2, labels1 + labels2,
+                            loc="upper right", fontsize=6.5,
+                            framealpha=0.4, facecolor="#1a1a1a",
+                            edgecolor="#444444"
+                        )
+                        for txt in legend.get_texts():
+                            txt.set_color("white")
+                else:
+                    ax.plot(data_b[0], _v(data_b, i),
+                            color=COLORS["B"], linewidth=0.9,
+                            alpha=alpha_b, label=label_b, zorder=3)
+
+                    if i == dominant_b_idx:
+                        pv_b = peaks_b[i][1]
+                        ax.scatter([peaks_b[i][2]], [pv_b],
+                                   color="#ffffff", s=40, zorder=6,
+                                   edgecolors=COLORS["B"], linewidths=1.5)
+                        ax.annotate(
+                            f"  Peak B: {pv_b:.4f} {unit}",
+                            xy=(peaks_b[i][2], pv_b),
+                            xytext=(peaks_b[i][2], pv_b * 0.75 if pv_b > 0 else pv_b * 1.25),
+                            color=COLORS["B"], fontsize=6.5,
+                            arrowprops=dict(arrowstyle="->", color=COLORS["B"], lw=0.8)
+                        )
+
+            ax.tick_params(colors="gray", labelsize=7)
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#2a2a2a")
+
+            if i == 0 and not dual_axis:
+                legend = ax.legend(
+                    loc="upper right", fontsize=6.5,
+                    framealpha=0.4, facecolor="#1a1a1a",
+                    edgecolor="#444444"
+                )
+                for txt in legend.get_texts():
+                    txt.set_color("white")            # Signal B — red solid
             if data_b:
                 ax.plot(data_b[0], _v(data_b, i),
                         color=COLORS["B"], linewidth=0.9,
@@ -1195,7 +1346,14 @@ class ComparisonPanel(ctk.CTkToplevel):
 
         axes[-1].set_xlabel("Time (s)", color="gray", fontsize=8)
 
-        fig.suptitle("Seismogram Comparison",
+        band_a = self._freq_band_a.get()
+        band_b = self._freq_band_b.get() if self._use_b.get() else None
+        band_labels = {"Broadband": "BB", "LF Only": "LF", "HF Only": "HF"}
+        if band_b and band_b != band_a:
+            title_band = f"A:{band_labels[band_a]}  vs  B:{band_labels[band_b]}"
+        else:
+            title_band = {"Broadband": "Broadband", "LF Only": "LF (0–1 Hz)", "HF Only": "HF (1–10 Hz)"}.get(band_a, band_a)
+        fig.suptitle(f"Seismogram Comparison — {title_band}",
                      color="white", fontsize=9, y=0.97)
 
         # Save PIL image

@@ -114,20 +114,18 @@ class StationDetailPanel(ctk.CTkToplevel):
         self.tabs.pack(fill="both", expand=True, padx=10, pady=(10, 0))
 
         # Base tabs always present
-        tab_names = ["Velocity", "Acceleration", "RotD50/100", "FAS", "Raw Data"]
+        tab_names = ["Velocity", "Acceleration", "LF & HF", "RotD50/100", "FAS", "Raw Data"]
 
-        # Detect if this is a GMPE event (has _gmpe.png but no overlay/rotd50 comparison)
+        # Detect if this is a GMPE event
         self._is_gmpe = self.is_validation and WSLBridge.wsl_path_exists(
             f"{self.outdata}/{self.val_event_short}_{self.run_id}_{self.sid}_gmpe.png"
         )
 
-        # Validation-only tabs — different for GMPE vs real historical events
+        # Validation-only tabs
         if self.is_validation:
             if self._is_gmpe:
-                # GMPE events: show GMPE comparison tab instead of overlay/rotd50 gof
                 tab_names.insert(2, "GMPE Comparison")
             else:
-                # Real historical events: show overlay and RotD50 GoF
                 tab_names.insert(2, "Overlay")
                 tab_names.insert(3, "RotD50 GoF")
                 tab_names.append("FAS Comparison")
@@ -146,6 +144,9 @@ class StationDetailPanel(ctk.CTkToplevel):
             else:
                 self._build_overlay_tab()
                 self._build_rotd50_gof_tab()
+
+        # LF & HF tab — always present
+        self._build_lfhf_tab()
 
         self._build_rotd_combined_tab()
         self._build_fas_tab()
@@ -481,10 +482,10 @@ class StationDetailPanel(ctk.CTkToplevel):
                         ax.set_facecolor("#1a1a1a")
 
                         ax.plot(periods, rotd50, color="#3b8ed0",
-                                linewidth=0.9, label="RotD50 — median horizontal")
+                                linewidth=1.2, label="RotD50 — median horizontal")
                         if rotd100:
                             ax.plot(periods, rotd100, color="#11CAA0",
-                                    linewidth=0.9, linestyle="--",
+                                    linewidth=0.7, alpha=0.7,
                                     label="RotD100 — maximum horizontal")
                             ax.fill_between(periods, rotd50, rotd100,
                                             alpha=0.12, color="#3b8ed0")
@@ -752,6 +753,177 @@ class StationDetailPanel(ctk.CTkToplevel):
                 f"{label} not found.",
                 master=self
             )
+
+    # ------------------------------------------------------------------
+    # LF & HF TAB
+    # ------------------------------------------------------------------
+
+    def _build_lfhf_tab(self):
+        """LF (Jbsim) and HF (Hfsims) intermediate seismograms for this station."""
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+        tab    = self.tabs.tab("LF & HF")
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+        home     = WSLBridge.get_wsl_home()
+        tmp_path = f"{home}/bbp_data/tmpdata/{self.run_id}"
+
+        # ── EXPLANATION ───────────────────────────────────────────────
+        hdr = ctk.CTkFrame(
+            scroll, fg_color="#0d1a2a",
+            corner_radius=6, border_width=1, border_color="#1a3a5a"
+        )
+        hdr.pack(fill="x", pady=(0, 10))
+
+        ctk.CTkLabel(
+            hdr,
+            text="LF / HF / Broadband — Frequency Band Comparison",
+            font=(res.FONT_LABEL[0], 12, "bold"),
+            text_color=res.COLOR_PRIMARY
+        ).pack(anchor="w", padx=12, pady=(8, 3))
+
+        ctk.CTkLabel(
+            hdr,
+            text=(
+                "LF (blue) = Jbsim output, 0–1 Hz, deterministic wave propagation.\n"
+                "HF (orange) = Hfsims output, 1–10+ Hz, stochastic crustal scattering.\n"
+                "Broadband (green) = LF + HF merged by Match module at ~1 Hz crossover."
+            ),
+            font=(res.FONT_LABEL[0], 10),
+            text_color="#aaaaaa",
+            justify="left"
+        ).pack(anchor="w", padx=12, pady=(0, 4))
+
+        ctk.CTkLabel(
+            hdr,
+            text=f"Raw files:  {tmp_path}/{self.run_id}.{self.sid}-lf.bbp  |  -hf.bbp",
+            font=("Courier", 9),
+            text_color="#4a8ab0"
+        ).pack(anchor="w", padx=12, pady=(0, 8))
+
+        # ── LOAD DATA ────────────────────────────────────────────────
+        def _parse(path):
+            ok, content = WSLBridge.read_wsl_file(path)
+            if not ok or not content.strip():
+                return None
+            times, ns, ew, ud = [], [], [], []
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 4:
+                    try:
+                        times.append(float(parts[0]))
+                        ns.append(float(parts[1]))
+                        ew.append(float(parts[2]))
+                        ud.append(float(parts[3]))
+                    except ValueError:
+                        continue
+            return (times, ns, ew, ud) if times else None
+
+        lf_data = _parse(f"{tmp_path}/{self.run_id}.{self.sid}-lf.bbp")
+        hf_data = _parse(f"{tmp_path}/{self.run_id}.{self.sid}-hf.bbp")
+        bb_data = _parse(f"{self.outdata}/{self.run_id}.{self.sid}.vel.bbp")
+
+        if not lf_data and not hf_data:
+            ctk.CTkLabel(
+                scroll,
+                text="⚠  LF/HF files not found in tmpdata",
+                font=(res.FONT_LABEL[0], 13, "bold"),
+                text_color="#888855"
+            ).pack(pady=(20, 6))
+            ctk.CTkLabel(
+                scroll,
+                text=(
+                    f"Expected: {tmp_path}/{self.run_id}.{self.sid}-lf.bbp\n\n"
+                    "BBP stores intermediate files temporarily.\n"
+                    "They may have been cleared if BBP ran multiple times\n"
+                    "or if this is an older simulation."
+                ),
+                font=(res.FONT_LABEL[0], 11),
+                text_color="#555555",
+                justify="center"
+            ).pack()
+            return
+
+        # ── PLOT ─────────────────────────────────────────────────────
+        COLORS = {"LF": "#3b8ed0", "HF": "#ff6b35", "Broadband": "#11CAA0"}
+        comp_names = ["N-S", "E-W", "U-D"]
+
+        plt.style.use("dark_background")
+        fig, axes = plt.subplots(3, 1, figsize=(10, 7),
+                                 facecolor="#111111", sharex=True)
+        fig.subplots_adjust(hspace=0.06)
+
+        for i, (ax, comp) in enumerate(zip(axes, comp_names)):
+            ax.set_facecolor("#1a1a1a")
+            ax.axhline(0, color="#2a2a2a", linewidth=0.5, zorder=1)
+
+            if lf_data:
+                ax.plot(lf_data[0], [lf_data[1], lf_data[2], lf_data[3]][i],
+                        color=COLORS["LF"], linewidth=0.9,
+                        label="LF — Jbsim (0–1 Hz)", zorder=3)
+            if hf_data:
+                ax.plot(hf_data[0], [hf_data[1], hf_data[2], hf_data[3]][i],
+                        color=COLORS["HF"], linewidth=0.9,
+                        label="HF — Hfsims (1–10+ Hz)", zorder=3)
+            if bb_data:
+                ax.plot(bb_data[0], [bb_data[1], bb_data[2], bb_data[3]][i],
+                        color=COLORS["Broadband"], linewidth=0.9,
+                        alpha=0.75, label="Broadband — Match", zorder=2)
+
+            ax.set_ylabel(f"{comp}\n(cm/s)", color="gray", fontsize=8)
+            ax.tick_params(colors="gray", labelsize=7)
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#2a2a2a")
+
+            if i == 0:
+                leg = ax.legend(loc="upper right", fontsize=7,
+                                framealpha=0.4, facecolor="#1a1a1a",
+                                edgecolor="#444444")
+                for txt in leg.get_texts():
+                    txt.set_color("white")
+
+        axes[-1].set_xlabel("Time (s)", color="gray", fontsize=9)
+        fig.suptitle(
+            f"LF / HF / Broadband — Station {self.sid}  (Run {self.run_id})",
+            color="white", fontsize=10, y=0.99
+        )
+
+        cw = FigureCanvasTkAgg(fig, master=scroll)
+        cw.draw()
+        cw.get_tk_widget().pack(fill="both", expand=True, padx=4, pady=4)
+
+        # Peak summary card
+        summary = ctk.CTkFrame(
+            scroll, fg_color="#0d1a2e",
+            corner_radius=6, border_width=1, border_color="#1a3a5a"
+        )
+        summary.pack(fill="x", padx=4, pady=(0, 8))
+        ctk.CTkLabel(
+            summary,
+            text="Peak Ground Velocity",
+            font=(res.FONT_LABEL[0], 10, "bold"),
+            text_color="#aaaacc"
+        ).pack(anchor="w", padx=10, pady=(6, 2))
+
+        for label, data, color in [
+            ("LF  (Jbsim)",  lf_data, COLORS["LF"]),
+            ("HF  (Hfsims)", hf_data, COLORS["HF"]),
+            ("Broadband",    bb_data, COLORS["Broadband"]),
+        ]:
+            if data:
+                peak = max(abs(v) for v in data[1] + data[2] + data[3])
+                ctk.CTkLabel(
+                    summary,
+                    text=f"  {label}  →  Peak: {peak:.5f} cm/s",
+                    font=("Courier", 10), text_color=color
+                ).pack(anchor="w", padx=10, pady=1)
+
+        ctk.CTkFrame(summary, fg_color="transparent", height=6).pack()
 
     def _build_raw_tab(self):
         tab    = self.tabs.tab("Raw Data")

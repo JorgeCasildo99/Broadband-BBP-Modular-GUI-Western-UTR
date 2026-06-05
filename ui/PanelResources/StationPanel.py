@@ -49,26 +49,6 @@ class StationPanel(ctk.CTkFrame):
         )
         self.lbl_counter.pack(side="right", padx=10)
 
-        # --- WARNING BAR (hidden by default, shown when stations are outside model) ---
-        self.warning_frame = ctk.CTkFrame(
-            self.stl_group,
-            fg_color="#3a1a00",
-            border_width=1,
-            border_color="#ff8800",
-            corner_radius=4
-        )
-        # Not packed yet — only shown when there are out-of-model stations
-
-        self.lbl_warning = ctk.CTkLabel(
-            self.warning_frame,
-            text="",
-            font=(res.FONT_LABEL[0], 11),
-            text_color="#ff8800",
-            wraplength=500,
-            justify="left"
-        )
-        self.lbl_warning.pack(padx=10, pady=5)
-
         # --- ZOOM CONTROL ---
         self.zoom_frame = ctk.CTkFrame(self.stl_group, fg_color="transparent")
         self.zoom_frame.pack(fill="x", padx=20, pady=(0, 5))
@@ -184,12 +164,14 @@ class StationPanel(ctk.CTkFrame):
         self._show_station_boundary= ctk.BooleanVar(value=True)
         self._show_fault_trace     = ctk.BooleanVar(value=True)
         self._show_terrain         = ctk.BooleanVar(value=True)
+        self._show_legend          = ctk.BooleanVar(value=True)
 
         toggle_defs = [
             ("Terrain",     self._show_terrain),
             ("Basin",       self._show_basin_boundary),
             ("Boundary",    self._show_station_boundary),
             ("Fault Trace", self._show_fault_trace),
+            ("Legend",      self._show_legend),
         ]
 
         def _make_toggle_cmd(var, is_terrain=False):
@@ -400,81 +382,6 @@ class StationPanel(ctk.CTkFrame):
                     self.canvas.draw()
                 except:
                     pass
-
-    # ------------------------------------------------------------------
-    # LABasin500 MODEL EXTENT CHECK
-    # ------------------------------------------------------------------
-
-    # LABasin500 model extent polygon — same coordinates used for the
-    # dashed green boundary drawn on the map. This is the single source
-    # of truth for the geographic extent check.
-    _LABASIN_LONS = [
-        -119.30, -119.00, -118.70, -118.40, -118.10,
-        -117.80, -117.50, -117.30, -117.20, -117.30,
-        -117.50, -117.80, -118.00, -118.20, -118.50,
-        -118.70, -119.00, -119.20, -119.40, -119.30
-    ]
-    _LABASIN_LATS = [
-        34.00, 33.70, 33.50, 33.40, 33.42,
-        33.50, 33.60, 33.75, 34.00, 34.30,
-        34.50, 34.55, 34.60, 34.55, 34.45,
-        34.30, 34.20, 34.10, 34.05, 34.00
-    ]
-
-    @staticmethod
-    def _point_in_polygon(lon, lat, poly_lons, poly_lats):
-        """
-        Ray-casting algorithm to test if a point (lon, lat) is inside
-        the polygon defined by poly_lons / poly_lats.
-        Returns True if inside, False if outside.
-        """
-        n = len(poly_lons)
-        inside = False
-        j = n - 1
-        for i in range(n):
-            xi, yi = poly_lons[i], poly_lats[i]
-            xj, yj = poly_lons[j], poly_lats[j]
-            if ((yi > lat) != (yj > lat)) and \
-               (lon < (xj - xi) * (lat - yi) / (yj - yi + 1e-12) + xi):
-                inside = not inside
-            j = i
-        return inside
-
-    def _check_outside_model(self, stations):
-        """
-        Splits station list into inside and outside LABasin500 model extent.
-        Returns (inside_list, outside_list) — both as (lon, lat, id) tuples.
-        """
-        inside  = []
-        outside = []
-        for s in stations:
-            lon, lat = s[0], s[1]
-            if self._point_in_polygon(lon, lat,
-                                      self._LABASIN_LONS,
-                                      self._LABASIN_LATS):
-                inside.append(s)
-            else:
-                outside.append(s)
-        return inside, outside
-
-    def _update_warning(self, outside_count, total_count):
-        """
-        Shows or hides the warning bar depending on whether any stations
-        fall outside the LABasin500 model extent.
-        """
-        if outside_count > 0:
-            pct = int(100 * outside_count / total_count) if total_count else 0
-            self.lbl_warning.configure(
-                text=(
-                    f"⚠  {outside_count} of {total_count} stations ({pct}%) are outside "
-                    f"the LABasin500 velocity model extent.  "
-                    f"BBP will use the nearest available Green's Function for these stations, "
-                    f"which may produce physically inaccurate seismograms."
-                )
-            )
-            self.warning_frame.pack(fill="x", padx=12, pady=(0, 6))
-        else:
-            self.warning_frame.pack_forget()
 
     # ------------------------------------------------------------------
     # TERRAIN TILE CACHING
@@ -915,47 +822,27 @@ class StationPanel(ctk.CTkFrame):
                     label="Fault Top Center"
                 )
 
-            # Auto-generated stations — split by model extent
-            inside_stations, outside_stations = self._check_outside_model(stations)
-
-            if inside_stations:
-                lons = [s[0] for s in inside_stations]
-                lats = [s[1] for s in inside_stations]
+            # Auto-generated stations
+            if stations:
+                lons = [s[0] for s in stations]
+                lats = [s[1] for s in stations]
                 self.ax.scatter(
                     lons, lats,
                     color="#3b8ed0", s=25, alpha=0.7, zorder=5,
                     label="Synthetic Stations (BBP output points)"
                 )
 
-            if outside_stations:
-                lons = [s[0] for s in outside_stations]
-                lats = [s[1] for s in outside_stations]
-                self.ax.scatter(
-                    lons, lats,
-                    color="#ff4444", s=30, alpha=0.9, zorder=6,
-                    marker="x", linewidths=1.5,
-                    label="Outside LABasin500 Extent (⚠ inaccurate GF)"
-                )
-
-            # Update warning bar
-            all_auto = inside_stations + outside_stations
-            self._update_warning(len(outside_stations), len(all_auto))
-
-            # Manual stations — also check model extent
+            # Manual stations
             for m_lon, m_lat, m_name in manual_stations:
                 stations.append((m_lon, m_lat, m_name))
-                is_inside = self._point_in_polygon(
-                    m_lon, m_lat, self._LABASIN_LONS, self._LABASIN_LATS
-                )
-                dot_color = "gold" if is_inside else "#ff4444"
                 self.ax.scatter(
                     m_lon, m_lat,
-                    color=dot_color, s=55, edgecolors="white", zorder=12
+                    color="gold", s=55, edgecolors="white", zorder=12
                 )
                 self.ax.annotate(
                     m_name, (m_lon, m_lat),
                     textcoords="offset points", xytext=(5, 5),
-                    fontsize=7, color=dot_color
+                    fontsize=7, color="gold"
                 )
 
             # --- REAL STATIONS LAYER (Chino Hills) ---
@@ -984,7 +871,7 @@ class StationPanel(ctk.CTkFrame):
                 facecolor="#111111",
                 edgecolor="#444",
                 prop={"size": 8}
-            )
+            ) if self._show_legend.get() else self.ax.legend().set_visible(False)
             self.ax.set_title(
                 f"{pattern} Pattern — {mode}  "
                 f"(boundary radius: {int(radius_km)} km)",
