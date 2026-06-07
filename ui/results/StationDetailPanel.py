@@ -849,71 +849,84 @@ class StationDetailPanel(ctk.CTkToplevel):
             ).pack()
             return
 
-        # ── PLOT ─────────────────────────────────────────────────────
+        # ── PLOT — THREE SEPARATE FIGURES ────────────────────────────
         COLORS = {"LF": "#3b8ed0", "HF": "#ff6b35", "Broadband": "#11CAA0"}
         comp_names = ["N-S", "E-W", "U-D"]
 
+        signals = [
+            ("LF — Jbsim  (0–1 Hz)",       lf_data, COLORS["LF"]),
+            ("HF — Hfsims  (1–10+ Hz)",     hf_data, COLORS["HF"]),
+            ("Broadband — Match  (merged)", bb_data, COLORS["Broadband"]),
+        ]
+
         plt.style.use("dark_background")
-        fig, axes = plt.subplots(3, 1, figsize=(10, 7),
-                                 facecolor="#111111", sharex=True)
-        fig.subplots_adjust(hspace=0.06)
 
-        for i, (ax, comp) in enumerate(zip(axes, comp_names)):
-            ax.set_facecolor("#1a1a1a")
-            ax.axhline(0, color="#2a2a2a", linewidth=0.5, zorder=1)
+        for sig_label, sig_data, sig_color in signals:
+            # Section header
+            sec = ctk.CTkFrame(scroll, fg_color="transparent")
+            sec.pack(fill="x", pady=(8, 2))
+            ctk.CTkLabel(
+                sec, text=sig_label,
+                font=(res.FONT_LABEL[0], 11, "bold"),
+                text_color=sig_color
+            ).pack(side="left")
+            sep = ctk.CTkFrame(sec, fg_color="#2a2a2a", height=1)
+            sep.pack(side="left", fill="x", expand=True, padx=(10, 0), pady=6)
 
-            if lf_data:
-                ax.plot(lf_data[0], [lf_data[1], lf_data[2], lf_data[3]][i],
-                        color=COLORS["LF"], linewidth=0.9,
-                        label="LF — Jbsim (0–1 Hz)", zorder=3)
-            if hf_data:
-                ax.plot(hf_data[0], [hf_data[1], hf_data[2], hf_data[3]][i],
-                        color=COLORS["HF"], linewidth=0.9,
-                        label="HF — Hfsims (1–10+ Hz)", zorder=3)
-            if bb_data:
-                ax.plot(bb_data[0], [bb_data[1], bb_data[2], bb_data[3]][i],
-                        color=COLORS["Broadband"], linewidth=0.9,
-                        alpha=0.75, label="Broadband — Match", zorder=2)
+            if not sig_data:
+                ctk.CTkLabel(
+                    scroll,
+                    text=f"No data available for {sig_label.split('—')[0].strip()}",
+                    font=(res.FONT_LABEL[0], 11),
+                    text_color="#555555"
+                ).pack(anchor="w", padx=10, pady=(0, 8))
+                continue
 
-            ax.set_ylabel(f"{comp}\n(cm/s)", color="gray", fontsize=8)
-            ax.tick_params(colors="gray", labelsize=7)
-            for spine in ax.spines.values():
-                spine.set_edgecolor("#2a2a2a")
+            fig, axes = plt.subplots(3, 1, figsize=(10, 5),
+                                     facecolor="#111111", sharex=True)
+            fig.subplots_adjust(hspace=0.06, top=0.88, bottom=0.10,
+                                left=0.10, right=0.97)
+            fig.suptitle(
+                f"{sig_label} — Station {self.sid}  (Run {self.run_id})",
+                color=sig_color, fontsize=10, y=0.96
+            )
 
-            if i == 0:
-                leg = ax.legend(loc="upper right", fontsize=7,
-                                framealpha=0.4, facecolor="#1a1a1a",
-                                edgecolor="#444444")
-                for txt in leg.get_texts():
-                    txt.set_color("white")
+            for i, (ax, comp) in enumerate(zip(axes, comp_names)):
+                ax.set_facecolor("#1a1a1a")
+                ax.axhline(0, color="#2a2a2a", linewidth=0.5, zorder=1)
+                vals = [sig_data[1], sig_data[2], sig_data[3]][i]
+                ax.plot(sig_data[0], vals,
+                        color=sig_color, linewidth=0.9, zorder=3)
+                ax.set_ylabel(f"{comp}\n(cm/s)", color="gray",
+                              fontsize=8, labelpad=4)
+                ax.tick_params(colors="gray", labelsize=7)
+                for spine in ax.spines.values():
+                    spine.set_edgecolor("#2a2a2a")
 
-        axes[-1].set_xlabel("Time (s)", color="gray", fontsize=9)
-        fig.suptitle(
-            f"LF / HF / Broadband — Station {self.sid}  (Run {self.run_id})",
-            color="white", fontsize=10, y=0.99
-        )
+            axes[-1].set_xlabel("Time (s)", color="gray", fontsize=9)
 
-        cw = FigureCanvasTkAgg(fig, master=scroll)
-        cw.draw()
-        cw.get_tk_widget().pack(fill="both", expand=True, padx=4, pady=4)
+            cw = FigureCanvasTkAgg(fig, master=scroll)
+            cw.draw()
+            cw.get_tk_widget().pack(fill="x", padx=4, pady=(0, 4))
+            plt.close(fig)
 
         # Peak summary card
         summary = ctk.CTkFrame(
             scroll, fg_color="#0d1a2e",
             corner_radius=6, border_width=1, border_color="#1a3a5a"
         )
-        summary.pack(fill="x", padx=4, pady=(0, 8))
+        summary.pack(fill="x", padx=4, pady=(8, 8))
         ctk.CTkLabel(
             summary,
-            text="Peak Ground Velocity",
+            text="Peak Ground Velocity Summary",
             font=(res.FONT_LABEL[0], 10, "bold"),
             text_color="#aaaacc"
         ).pack(anchor="w", padx=10, pady=(6, 2))
 
         for label, data, color in [
-            ("LF  (Jbsim)",  lf_data, COLORS["LF"]),
-            ("HF  (Hfsims)", hf_data, COLORS["HF"]),
-            ("Broadband",    bb_data, COLORS["Broadband"]),
+            ("LF  (Jbsim, 0–1 Hz)",        lf_data, COLORS["LF"]),
+            ("HF  (Hfsims, 1–10+ Hz)",      hf_data, COLORS["HF"]),
+            ("Broadband  (Match, merged)",  bb_data, COLORS["Broadband"]),
         ]:
             if data:
                 peak = max(abs(v) for v in data[1] + data[2] + data[3])
