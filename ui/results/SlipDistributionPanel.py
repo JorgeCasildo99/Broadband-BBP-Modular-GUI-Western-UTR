@@ -496,6 +496,14 @@ class SlipDistributionPanel(ctk.CTkToplevel):
         # Update info box
         hypo_dep = (plane["depth_top"] +
                     plane["hypo_dip_km"] * math.sin(math.radians(plane["dip"])))
+        # Check if tinit came from .tinit file or SRF fallback
+        home     = WSLBridge.get_wsl_home()
+        tmp_path = f"{home}/bbp_data/tmpdata/{self._run_id}"
+        tinit_check = WSLBridge.run_command(
+            f"ls '{tmp_path}'/*_seg0.tinit 2>/dev/null | head -1"
+        )
+        tinit_source = "from .tinit file ✓" if tinit_check.stdout.strip() else "from .srf file (fallback)"
+
         self._info_lbl.configure(
             text=(
                 f"Strike:   {plane['strike']}°\n"
@@ -505,7 +513,8 @@ class SlipDistributionPanel(ctk.CTkToplevel):
                 f"Top dep.: {plane['depth_top']} km\n"
                 f"Hypo dep: {hypo_dep:.2f} km\n"
                 f"Patches:  {plane['nstrike']}×{plane['ndip']}\n"
-                f"Points:   {len(data['points'])}"
+                f"Points:   {len(data['points'])}\n"
+                f"Tinit:    {tinit_source}"
             ),
             text_color="#aaaaaa"
         )
@@ -518,7 +527,12 @@ class SlipDistributionPanel(ctk.CTkToplevel):
         self._redraw()
 
     def _build_grids(self):
-        """Reshapes flat point list into 2D numpy grids."""
+        """
+        Reshapes flat point list into 2D numpy grids.
+        For tinit: reads from the .tinit file using BBP's exact
+        read_xy_file algorithm (x-fast ordering, column 3).
+        For slip, rake, rise_time: reads from parsed SRF points.
+        """
         if not MPLOT_OK:
             return
         plane  = self._srf_data["plane"]
@@ -527,24 +541,80 @@ class SlipDistributionPanel(ctk.CTkToplevel):
         pts    = self._srf_data["points"]
 
         # Clamp in case parse returned fewer points
-        total = min(len(pts), ns * nd)
-        pts   = pts[:total]
+        total    = min(len(pts), ns * nd)
+        pts      = pts[:total]
         ns_actual = total // nd if nd > 0 else ns
 
         # Along-strike and along-dip axes (km)
         dx = plane["len_km"] / ns
         dz = plane["wid_km"] / nd
-        x  = np.arange(ns_actual) * dx + dx / 2   # strike axis
-        z  = np.arange(nd)        * dz + dz / 2   # dip axis (depth)
+        x  = np.arange(ns_actual) * dx + dx / 2
+        z  = np.arange(nd)        * dz + dz / 2
 
-        for key in ("slip_cm", "rake", "rise_time", "tinit"):
+        # Slip, rake, rise_time from SRF points
+        for key in ("slip_cm", "rake", "rise_time"):
             vals = np.array([p[key] for p in pts])
-            # Pad if needed
             pad  = ns_actual * nd - len(vals)
             if pad > 0:
                 vals = np.append(vals, np.zeros(pad))
             grid = vals.reshape(nd, ns_actual)
             self._grid[key] = (x, z, grid)
+
+        # Tinit — try to read from .tinit file exactly like BBP does
+        # File: {srf_basename}_seg0.tinit in tmpdata/{run_id}/
+        # Format: x_km  y_km  tinit  (x-fast ordering, numx=nstrike, numy=ndip)
+        tinit_grid = self._read_tinit_file(ns_actual, nd)
+
+        if tinit_grid is not None:
+            self._grid["tinit"] = (x, z, tinit_grid)
+        else:
+            # Fallback: use tinit from SRF points (less accurate for contours)
+            vals = np.array([p["tinit"] for p in pts])
+            pad  = ns_actual * nd - len(vals)
+            if pad > 0:
+                vals = np.append(vals, np.zeros(pad))
+            grid = vals.reshape(nd, ns_actual)
+            self._grid["tinit"] = (x, z, grid)
+
+    def _read_tinit_file(self, numx, numy):
+        """
+        Reads the .tinit file using BBP's exact read_xy_file algorithm.
+        File is in ~/bbp_data/tmpdata/{run_id}/{basename}_seg0.tinit
+        Returns ndarray of shape (numy, numx) or None if not found.
+        """
+        if not self._run_id:
+            return None
+
+        home     = WSLBridge.get_wsl_home()
+        tmp_path = f"{home}/bbp_data/tmpdata/{self._run_id}"
+
+        # Find the .tinit file — pattern: *_seg0.tinit
+        result = WSLBridge.run_command(
+            f"ls '{tmp_path}'/*_seg0.tinit 2>/dev/null | head -1"
+        )
+        tinit_path = result.stdout.strip()
+        if not tinit_path:
+            return None
+
+        ok, content = WSLBridge.read_wsl_file(tinit_path)
+        if not ok or not content.strip():
+            return None
+
+        lines = content.strip().splitlines()
+        if len(lines) < numx * numy:
+            return None
+
+        # BBP read_xy_file: x-fast ordering, column index 2 (0-based)
+        data = np.zeros((numy, numx), dtype=float)
+        try:
+            for y in range(numy):
+                for x in range(numx):
+                    tokens = lines[y * numx + x].split()
+                    data[y][x] = float(tokens[2])
+        except (IndexError, ValueError):
+            return None
+
+        return data
 
     # ── DRAWING ───────────────────────────────────────────────────────────────
 
@@ -641,6 +711,8 @@ class SlipDistributionPanel(ctk.CTkToplevel):
                 divisor = 2.0
 
             n_contours = int(round((maxtinit - mintinit) / divisor))
+            # BBP enforces minimum of 10 contour lines
+            n_contours = max(n_contours, 10)
 
             if n_contours > 1:
                 levels = np.linspace(mintinit, maxtinit, n_contours)
@@ -689,10 +761,16 @@ class SlipDistributionPanel(ctk.CTkToplevel):
         # ── TITLE (match BBP style) ───────────────────────────────────
         avg_slip = np.nanmean(self._grid["slip_cm"][2])
         max_slip = np.nanmax(self._grid["slip_cm"][2])
+        _, _, tinit_grid = self._grid["tinit"]
+        try:
+            divisor = float(self._contour_interval.get())
+        except ValueError:
+            divisor = 2.0
+        n_cont = max(int(round((np.nanmax(tinit_grid) - np.nanmin(tinit_grid)) / divisor)), 10)
         if param_key == "slip_cm":
-            subtitle = f"Avg/Max Slip = {avg_slip:.0f}/{max_slip:.0f}"
+            subtitle = f"Avg/Max Slip = {avg_slip:.0f}/{max_slip:.0f} cm   |   {n_cont} contour lines"
         else:
-            subtitle = sel_label
+            subtitle = f"{sel_label}   |   {n_cont} contour lines"
 
         fig.suptitle(
             f"Rupture Model — {os.path.basename(self._srf_path)}\n{subtitle}"
