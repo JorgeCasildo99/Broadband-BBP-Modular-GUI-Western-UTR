@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(BASE_DIR, "core"))
 
 import core.Resources as res
 from core.VelocityModels import get_all_models_with_status, get_gf_dir
+from ui.VelocityModelPanel import VelocityModelPanel
 
 
 class ConfigurationPanel(ctk.CTkToplevel):
@@ -464,6 +465,39 @@ class ConfigurationPanel(ctk.CTkToplevel):
                 font=("Courier", 11),
                 text_color=res.COLOR_SUCCESS
             ).pack(anchor="w", padx=14, pady=(0, 10))
+
+            # Velocity profile visualization button
+            self._section_label("Velocity Profile")
+            vel_frame = ctk.CTkFrame(
+                self.right_scroll, fg_color="#0a1a2a",
+                corner_radius=6, border_width=1, border_color="#1a3a5a"
+            )
+            vel_frame.pack(fill="x", pady=(0, 10))
+
+            ctk.CTkLabel(
+                vel_frame,
+                text=(
+                    "Visualize the 1D velocity model used in BBP simulations.\n"
+                    "Shows Vp (P-wave), Vs (S-wave), and Density vs Depth\n"
+                    "with depth increasing downward (geological convention)."
+                ),
+                font=(res.FONT_LABEL[0], 11),
+                text_color="#aaaaaa",
+                justify="left"
+            ).pack(anchor="w", padx=14, pady=(10, 6))
+
+            ctk.CTkButton(
+                vel_frame,
+                text="View Velocity Profile (Vp / Vs / Density)",
+                width=280, height=38,
+                fg_color="#0a1a2a",
+                hover_color="#1a3a5a",
+                border_width=1,
+                border_color="#4a9fd4",
+                text_color="#4a9fd4",
+                font=(res.FONT_LABEL[0], 12, "bold"),
+                command=lambda m=model["name"]: VelocityModelPanel(self, model_name=m)
+            ).pack(padx=14, pady=(0, 12))
 
         else:
             self._section_label("Installation Guide")

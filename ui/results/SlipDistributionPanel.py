@@ -174,7 +174,7 @@ class SlipDistributionPanel(ctk.CTkToplevel):
     """
 
     PARAMS = [
-        ("Slip (cm)",        "slip_cm",   "hot_r",   "Slip (cm)"),
+        ("Slip (cm)",        "slip_cm",   "YlOrRd",  "Slip (cm)"),
         ("Rake (°)",         "rake",      "RdBu",    "Rake (degrees)"),
         ("Rise Time (s)",    "rise_time", "plasma",  "Rise Time (s)"),
         ("Rupture Time (s)", "tinit",     "viridis", "Rupture Time (s)"),
@@ -336,9 +336,13 @@ class SlipDistributionPanel(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             parent,
-            text="n_lines = (max_t − min_t) / divisor",
+            text="n_levels = (max_t − min_t) / divisor\n"
+                 "min 10 levels enforced (BBP rule)\n"
+                 "Each level = one rupture time isochrone\n"
+                 "One level can draw many curve segments",
             font=("Courier", 8),
-            text_color="#444444"
+            text_color="#444444",
+            justify="left"
         ).pack(anchor="w", padx=16)
 
         self._contour_interval = ctk.StringVar(value="2.0")
@@ -670,15 +674,29 @@ class SlipDistributionPanel(ctk.CTkToplevel):
         # Reserve right space manually
         fig.subplots_adjust(left=0.08, right=0.70, top=0.90, bottom=0.12)
 
-        # BBP uses imshow with origin='upper' and extent
-        norm = plt.Normalize(vmin=np.nanmin(grid), vmax=np.nanmax(grid))
-        im   = ax.imshow(
+        # Color map — match BBP exactly
+        # BBP uses YlOrRd for slip, vmin=0 (white=zero slip), vmax=max
+        if param_key == "slip_cm":
+            # BBP: vmin=0 anchors white at exactly zero
+            vmin = 0
+            vmax = np.nanmax(grid)
+            # BBP uses YlOrRd for slip
+            if cmap_name == "hot_r":
+                cmap_name = "YlOrRd"
+        else:
+            vmin = np.nanmin(grid)
+            vmax = np.nanmax(grid)
+
+        norm = plt.Normalize(vmin=vmin, vmax=vmax)
+
+        # BBP uses equal aspect (square pixels) — set on the axes, not imshow
+        ax.set_aspect("equal", adjustable="box")
+        im = ax.imshow(
             grid,
             cmap=cmap_name,
             norm=norm,
             extent=extents,
-            origin="upper",
-            aspect="auto"
+            origin="upper"
         )
 
         # Freeze axis extents (BBP does this too)
@@ -732,8 +750,10 @@ class SlipDistributionPanel(ctk.CTkToplevel):
 
         # ── HYPOCENTER ────────────────────────────────────────────────
         if self._show_hypo.get():
-            # BBP centers at 0, so hypocenter x = shypo - len/2
-            hx = plane["hypo_stk_km"] - half_len
+            # shypo is hypo_along_stk from the .src file — distance from
+            # CENTER of fault, already in the same coordinate system as
+            # the plot (-half_len to +half_len). No subtraction needed.
+            hx = plane["hypo_stk_km"]
             hz = plane["hypo_dip_km"]
             ax.plot(hx, hz, "b*", markersize=18, markeredgewidth=0.8,
                     markeredgecolor="white", zorder=10,
@@ -768,9 +788,9 @@ class SlipDistributionPanel(ctk.CTkToplevel):
             divisor = 2.0
         n_cont = max(int(round((np.nanmax(tinit_grid) - np.nanmin(tinit_grid)) / divisor)), 10)
         if param_key == "slip_cm":
-            subtitle = f"Avg/Max Slip = {avg_slip:.0f}/{max_slip:.0f} cm   |   {n_cont} contour lines"
+            subtitle = f"Avg/Max Slip = {avg_slip:.0f}/{max_slip:.0f} cm   |   {n_cont} rupture time levels"
         else:
-            subtitle = f"{sel_label}   |   {n_cont} contour lines"
+            subtitle = f"{sel_label}   |   {n_cont} rupture time levels"
 
         fig.suptitle(
             f"Rupture Model — {os.path.basename(self._srf_path)}\n{subtitle}"

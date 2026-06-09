@@ -26,6 +26,7 @@ from ui.results.ImageFullscreenPanel  import ImageFullscreenPanel
 from ui.results.StationDetailPanel    import StationDetailPanel
 from ui.results.ComparisonPanel       import ComparisonPanel
 from ui.results.SlipDistributionPanel import SlipDistributionPanel
+from ui.VelocityModelPanel            import VelocityModelPanel
 
 
 class ResultsPanel(ctk.CTkToplevel):
@@ -175,6 +176,14 @@ class ResultsPanel(ctk.CTkToplevel):
         if ok and "LABasin" in src:
             return "LABasin500"
         return "LABasin500 (GP default)"
+
+    def _open_velocity_model(self, model_name):
+        """Opens the VelocityModelPanel popup for the given model."""
+        # Clean up model name — strip any extra text
+        name = model_name.strip().split()[0]
+        if "LABasin" in name or "labasin" in name.lower():
+            name = "LABasin500"
+        VelocityModelPanel(self, model_name=name)
 
     def _get_modules_ran(self):
         """Extracts the list of modules that ran from the BBP XML."""
@@ -617,7 +626,7 @@ class ResultsPanel(ctk.CTkToplevel):
 
         ctk.CTkButton(
             btn_frame,
-            text="⬡  Open Slip Distribution Viewer",
+            text="Open Slip Distribution Viewer",
             width=280, height=48,
             fg_color="#3a2000",
             hover_color="#5a3200",
@@ -698,11 +707,34 @@ class ResultsPanel(ctk.CTkToplevel):
                 meta_frame, text=f"{label}:",
                 font=(res.FONT_LABEL[0], 12, "bold"), text_color="gray"
             ).grid(row=i, column=0, padx=(15, 8), pady=5, sticky="w")
-            ctk.CTkLabel(
-                meta_frame, text=str(value),
-                font=("Courier", 11), text_color="white",
-                wraplength=700, justify="left", anchor="w"
-            ).grid(row=i, column=1, padx=(0, 15), pady=5, sticky="w")
+
+            if label == "Velocity Model":
+                # Row with value + button to open visualization
+                val_frame = ctk.CTkFrame(meta_frame, fg_color="transparent")
+                val_frame.grid(row=i, column=1, padx=(0, 15), pady=5, sticky="w")
+                ctk.CTkLabel(
+                    val_frame, text=str(value),
+                    font=("Courier", 11), text_color="white",
+                    anchor="w"
+                ).pack(side="left")
+                ctk.CTkButton(
+                    val_frame,
+                    text="View Model",
+                    width=90, height=24,
+                    fg_color="#1a3a2a",
+                    hover_color="#2a5a3a",
+                    border_width=1,
+                    border_color="#11CAA0",
+                    text_color="#11CAA0",
+                    font=(res.FONT_LABEL[0], 10),
+                    command=lambda m=str(value): self._open_velocity_model(m)
+                ).pack(side="left", padx=(12, 0))
+            else:
+                ctk.CTkLabel(
+                    meta_frame, text=str(value),
+                    font=("Courier", 11), text_color="white",
+                    wraplength=700, justify="left", anchor="w"
+                ).grid(row=i, column=1, padx=(0, 15), pady=5, sticky="w")
 
         if modules_ran:
             _section_label(scroll, "Modules Executed")
