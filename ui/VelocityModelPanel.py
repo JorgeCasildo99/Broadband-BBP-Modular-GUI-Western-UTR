@@ -173,12 +173,19 @@ class VelocityModelPanel(ctk.CTkToplevel):
         left.pack(fill="both", expand=True)
         self._build_info(left)
 
-        # Right plot area
-        self.plot_frame = ctk.CTkFrame(
+        # Right plot area — scrollable so plots + full table are accessible
+        right_outer = ctk.CTkFrame(
             main, fg_color="#0d0d0d",
             corner_radius=8, border_width=1, border_color="#2a2a2a"
         )
-        self.plot_frame.grid(row=0, column=1, sticky="nsew")
+        right_outer.grid(row=0, column=1, sticky="nsew")
+
+        self.plot_frame = ctk.CTkScrollableFrame(
+            right_outer, fg_color="transparent",
+            scrollbar_button_color="#2a2a2a",
+            scrollbar_button_hover_color="#444444"
+        )
+        self.plot_frame.pack(fill="both", expand=True)
 
         self._loading_lbl = ctk.CTkLabel(
             self.plot_frame,
@@ -186,7 +193,7 @@ class VelocityModelPanel(ctk.CTkToplevel):
             font=(res.FONT_LABEL[0], 14),
             text_color="#444444"
         )
-        self._loading_lbl.pack(expand=True)
+        self._loading_lbl.pack(pady=80)
 
     def _build_info(self, parent):
         def _sec(text):
@@ -231,20 +238,6 @@ class VelocityModelPanel(ctk.CTkToplevel):
             text_color="#555555",
             justify="left"
         ).pack(anchor="w", padx=14, pady=(0, 12))
-
-        _sec("LAYER TABLE")
-        self._table_frame = ctk.CTkFrame(
-            parent, fg_color="#1a1a1a",
-            corner_radius=4, border_width=1, border_color="#2a2a2a"
-        )
-        self._table_frame.pack(fill="x", padx=10, pady=(0, 12))
-
-        ctk.CTkLabel(
-            self._table_frame,
-            text="Dep(km)  Vp    Vs    ρ",
-            font=("Courier", 8, "bold"),
-            text_color="#777777"
-        ).pack(anchor="w", padx=6, pady=(4, 0))
 
     # ── LOADING ───────────────────────────────────────────────────────────────
 
@@ -305,19 +298,7 @@ class VelocityModelPanel(ctk.CTkToplevel):
         )
 
         # Populate layer table
-        for layer in layers:
-            thick_str = f"{layer['thickness']:.2f}" if layer['thickness'] < 500 else "∞"
-            ctk.CTkLabel(
-                self._table_frame,
-                text=(
-                    f"{layer['depth_top']:5.1f}    "
-                    f"{layer['vp']:.2f}  "
-                    f"{layer['vs']:.2f}  "
-                    f"{layer['density']:.2f}"
-                ),
-                font=("Courier", 8),
-                text_color="#666666"
-            ).pack(anchor="w", padx=6, pady=0)
+        # (table is now shown below the plots, not in the left panel)
 
         self._draw()
 
@@ -423,16 +404,13 @@ class VelocityModelPanel(ctk.CTkToplevel):
         cw = FigureCanvasTkAgg(fig, master=self.plot_frame)
         cw.draw()
         tk_w = cw.get_tk_widget()
-        tk_w.pack(fill="both", expand=True, padx=6, pady=6)
+        tk_w.configure(height=600)
+        tk_w.pack(fill="x", padx=6, pady=(6, 0))
         tk_w.bind("<Button-1>", lambda e: self._open_fullscreen())
 
         # Stats bar
-        stats = ctk.CTkFrame(
-            self.plot_frame, fg_color="#111111",
-            corner_radius=0, height=32
-        )
-        stats.pack(fill="x")
-        stats.pack_propagate(False)
+        stats = ctk.CTkFrame(self.plot_frame, fg_color="#111111", corner_radius=4)
+        stats.pack(fill="x", padx=6, pady=(0, 4))
         ctk.CTkLabel(
             stats,
             text=(
@@ -447,6 +425,112 @@ class VelocityModelPanel(ctk.CTkToplevel):
             font=("Courier", 9),
             text_color="#555555"
         ).pack(side="left", padx=10, pady=6)
+
+        # ── DATA TABLE ───────────────────────────────────────────────
+        # Spreadsheet-style table showing all layer values
+        table_outer = ctk.CTkFrame(
+            self.plot_frame, fg_color="#111111",
+            corner_radius=0, border_width=1, border_color="#2a2a2a"
+        )
+        table_outer.pack(fill="x", padx=6, pady=(0, 6))
+
+        # Table title
+        title_row = ctk.CTkFrame(table_outer, fg_color="#1a1a1a", height=28)
+        title_row.pack(fill="x")
+        title_row.pack_propagate(False)
+        ctk.CTkLabel(
+            title_row,
+            text="Layer Data Table",
+            font=(res.FONT_LABEL[0], 10, "bold"),
+            text_color=res.COLOR_PRIMARY
+        ).pack(side="left", padx=10, pady=4)
+        ctk.CTkLabel(
+            title_row,
+            text="H = thickness (km)  |  All velocities in km/s  |  ρ in g/cm³",
+            font=(res.FONT_LABEL[0], 9),
+            text_color="#444444"
+        ).pack(side="right", padx=10, pady=4)
+
+        # Table content — no scroll, shows all rows at once
+        table_content = ctk.CTkFrame(table_outer, fg_color="transparent")
+        table_content.pack(fill="x", padx=0, pady=0)
+
+        # Alias so the rest of the code works unchanged
+        table_scroll = table_content
+        table_scroll.pack(fill="x", padx=0, pady=0)
+
+        # Column definitions
+        cols = [
+            ("Layer",    "#",          40),
+            ("Depth Top","Dep (km)",   72),
+            ("H (km)",   "H (km)",     60),
+            ("Vp",       "Vp (km/s)",  80),
+            ("Vs",       "Vs (km/s)",  80),
+            ("Density",  "ρ (g/cm³)", 80),
+            ("Qp",       "Qp",         60),
+            ("Qs",       "Qs",         60),
+            ("Vp/Vs",    "Vp/Vs",      60),
+        ]
+
+        COLORS = {
+            "header"  : "#1e1e1e",
+            "even"    : "#181818",
+            "odd"     : "#1e1e1e",
+            "text_hdr": "#aaaaaa",
+            "vp"      : "#4a9fd4",
+            "vs"      : "#e07040",
+            "density" : "#11CAA0",
+            "other"   : "#888888",
+        }
+
+        # Header row
+        hdr_row = ctk.CTkFrame(table_scroll, fg_color=COLORS["header"])
+        hdr_row.pack(fill="x", pady=(0, 1))
+
+        for _, label, width in cols:
+            ctk.CTkLabel(
+                hdr_row, text=label,
+                font=(res.FONT_LABEL[0], 9, "bold"),
+                text_color=COLORS["text_hdr"],
+                width=width, anchor="center"
+            ).pack(side="left", padx=1)
+
+        # Data rows
+        for idx, layer in enumerate(layers):
+            row_color = COLORS["even"] if idx % 2 == 0 else COLORS["odd"]
+            row = ctk.CTkFrame(table_scroll, fg_color=row_color)
+            row.pack(fill="x", pady=0)
+            thick_str = f"{layer['thickness']:.3f}" if layer['thickness'] < 500 else "∞"
+            vp_vs     = f"{layer['vp']/layer['vs']:.2f}" if layer['vs'] > 0 else "—"
+            is_halfspace = layer['thickness'] >= 500
+
+            cell_data = [
+                (str(idx + 1),                  40, "#666666"),
+                (f"{layer['depth_top']:.3f}",   72, "#aaaaaa"),
+                (thick_str,                      60, "#aaaaaa"),
+                (f"{layer['vp']:.3f}",           80, COLORS["vp"]),
+                (f"{layer['vs']:.3f}",           80, COLORS["vs"]),
+                (f"{layer['density']:.3f}",      80, COLORS["density"]),
+                (f"{layer['qp']:.1f}",           60, COLORS["other"]),
+                (f"{layer['qs']:.1f}",           60, COLORS["other"]),
+                (vp_vs,                          60, "#777777"),
+            ]
+
+            for val, width, color in cell_data:
+                ctk.CTkLabel(
+                    row, text=val,
+                    font=("Courier", 9),
+                    text_color=color,
+                    width=width, anchor="center"
+                ).pack(side="left", padx=1, pady=2)
+
+            # Highlight half-space row
+            if is_halfspace:
+                ctk.CTkLabel(
+                    row, text="← half-space",
+                    font=(res.FONT_LABEL[0], 8),
+                    text_color="#444444"
+                ).pack(side="left", padx=4)
 
     def _open_fullscreen(self):
         if self._pil_img:
