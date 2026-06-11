@@ -365,6 +365,181 @@ class WSLBridge:
         return True, result.stdout
 
     # ------------------------------------------------------------------
+    # ADVANCED GP PARAMETER READ / WRITE
+    # Targets: ~/bbp_gf/{model}/{model}_velmodel_config.txt
+    #
+    # BBP reads these at runtime via vmodel_params dict (verified in
+    # hfsims.py and genslip.py). We never touch genslip_cfg.py or
+    # hfsims_cfg.py — the velmodel config is the safe override point.
+    #
+    # Parameter states in the config file:
+    #   ACTIVE   — line exists, uncommented  (KAPPA, QFEXP for LABasin500)
+    #   OVERRIDE — line exists but commented (MEAN_RVFAC, RANGE_RVFAC,
+    #              RISETIME_COEF — user must explicitly enable)
+    #   ABSENT   — line not in file yet      (SDROP — added when enabled)
+    # ------------------------------------------------------------------
+
+    # Maps GUI key → full config file key (CODEBASE_GP_XXX)
+    _ADV_PARAM_KEYS = {
+        "KAPPA"        : "CODEBASE_GP_KAPPA",
+        "QFEXP"        : "CODEBASE_GP_QFEXP",
+        "SDROP"        : "CODEBASE_GP_SDROP",
+        "MEAN_RVFAC"   : "CODEBASE_GP_MEAN_RVFAC",
+        "RANGE_RVFAC"  : "CODEBASE_GP_RANGE_RVFAC",
+        "RISETIME_COEF": "CODEBASE_GP_RISETIME_COEF",
+    }
+
+    # Decimal places per key — kept here so WSLBridge stays self-contained
+    # (no UI imports, no circular dependency risk)
+    _ADV_PARAM_DECIMALS = {
+        "KAPPA"        : 4,
+        "QFEXP"        : 3,
+        "SDROP"        : 0,   # integer value
+        "MEAN_RVFAC"   : 3,
+        "RANGE_RVFAC"  : 3,
+        "RISETIME_COEF": 2,
+    }
+
+    @classmethod
+    def read_advanced_params(cls, cfg_path):
+        """
+        Reads the velocity model config file from WSL and extracts
+        the current state of all advanced GP parameters.
+
+        Returns dict: {key: {"value": float, "enabled": bool}}
+          enabled=True  → line is uncommented and active
+          enabled=False → line is present but commented out (#)
+          key absent    → line does not exist in file at all
+
+        Returns empty dict on read failure.
+
+        Example:
+            params = WSLBridge.read_advanced_params(cfg_path)
+            # params["KAPPA"]      = {"value": 0.04,  "enabled": True}
+            # params["MEAN_RVFAC"] = {"value": 0.775, "enabled": False}
+            # "SDROP" absent — line not yet in file
+        """
+        result = cls.run_command(f"cat '{cfg_path}' 2>/dev/null")
+        if result.returncode != 0 or not result.stdout.strip():
+            return {}
+
+        params = {}
+
+        for key, full_key in cls._ADV_PARAM_KEYS.items():
+            for line in result.stdout.splitlines():
+                stripped     = line.strip()
+                is_commented = stripped.startswith("#")
+                bare         = stripped.lstrip("#").strip()
+
+                if bare.startswith(full_key) and "=" in bare:
+                    val_str = bare.split("=", 1)[1].strip()
+                    try:
+                        params[key] = {
+                            "value"  : float(val_str),
+                            "enabled": not is_commented,
+                        }
+                    except ValueError:
+                        pass
+                    break  # one matching line per key is enough
+
+        return params
+
+    @classmethod
+    def write_advanced_params(cls, cfg_path, params):
+        """
+        Writes updated advanced parameter values to the velocity model
+        config file in WSL.
+
+        For each key in params:
+          enabled=True  → write/update as active line (no leading #)
+          enabled=False → write as commented line (#CODEBASE_GP_XXX = val)
+
+        For lines absent from the file (e.g. SDROP), the new line is
+        inserted after the last existing CODEBASE_GP_ block so it stays
+        grouped with the other GP parameters.
+
+        If a parameter is disabled AND absent from the file, it is left
+        absent — BBP will use its built-in default from hfsims_cfg.py or
+        genslip_cfg.py automatically.
+
+        Args:
+            cfg_path (str)  : Full WSL path to the velmodel config file.
+            params   (dict) : {key: {"value": float, "enabled": bool}}
+
+        Returns:
+            (bool, str): (success, error_message_or_empty_string)
+        """
+        # --- Read current file content ---
+        result = cls.run_command(f"cat '{cfg_path}' 2>/dev/null")
+        if result.returncode != 0:
+            return False, f"Cannot read config file: {cfg_path}"
+
+        lines      = result.stdout.splitlines(keepends=True)
+        updated    = list(lines)
+        keys_found = set()
+
+        # --- Pass 1: update lines that already exist in the file ---
+        for i, line in enumerate(updated):
+            stripped     = line.strip()
+            bare         = stripped.lstrip("#").strip()
+
+            for key, full_key in cls._ADV_PARAM_KEYS.items():
+                if key not in params:
+                    continue
+                if not bare.startswith(full_key):
+                    continue
+
+                keys_found.add(key)
+                info    = params[key]
+                val     = info["value"]
+                enabled = info["enabled"]
+                dec     = cls._ADV_PARAM_DECIMALS.get(key, 4)
+
+                val_str = str(int(round(val))) if dec == 0 else f"{val:.{dec}f}"
+
+                if enabled:
+                    updated[i] = f"{full_key} = {val_str}\n"
+                else:
+                    updated[i] = f"#{full_key} = {val_str}\n"
+                break
+
+        # --- Pass 2: append lines that did not exist in the file ---
+        # Only add if the user explicitly enabled the override.
+        # If disabled and absent, leave absent — BBP uses its default.
+        lines_to_add = []
+        for key, full_key in cls._ADV_PARAM_KEYS.items():
+            if key not in params or key in keys_found:
+                continue
+
+            info    = params[key]
+            enabled = info["enabled"]
+            if not enabled:
+                continue
+
+            val     = info["value"]
+            dec     = cls._ADV_PARAM_DECIMALS.get(key, 4)
+            val_str = str(int(round(val))) if dec == 0 else f"{val:.{dec}f}"
+            lines_to_add.append(f"{full_key} = {val_str}\n")
+
+        if lines_to_add:
+            # Insert after the last CODEBASE_GP_ line so new params
+            # stay grouped with existing GP parameters
+            last_gp_idx = 0
+            for i, line in enumerate(updated):
+                if "CODEBASE_GP_" in line:
+                    last_gp_idx = i
+            for j, new_line in enumerate(lines_to_add):
+                updated.insert(last_gp_idx + 1 + j, new_line)
+
+        # --- Write back to WSL ---
+        new_content = "".join(updated)
+        ok, err = cls.write_wsl_file(cfg_path, new_content)
+        if not ok:
+            return False, f"Failed to write config file: {err}"
+
+        return True, ""
+
+    # ------------------------------------------------------------------
     # LIST FILES IN WSL DIRECTORY
     # ------------------------------------------------------------------
 

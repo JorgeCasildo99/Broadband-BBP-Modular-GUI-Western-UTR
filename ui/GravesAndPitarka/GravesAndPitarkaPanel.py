@@ -13,6 +13,7 @@ import core.Resources as res
 from ui.PanelResources.StationPanel import StationPanel
 from ui.GravesAndPitarka.ChinoHillsPanel import ChinoHillsPanel
 from ui.SimulationPanel import SimulationPanel
+from ui.AdvancedSettingsPanel import AdvancedSettingsPanel
 
 
 class GravesAndPitarkaPanel(ctk.CTkFrame):
@@ -358,6 +359,21 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
         )
         self.help_label.place(x=0, y=0)
 
+        self.btn_advanced = ctk.CTkButton(
+            self.bottom_bar,
+            text="⚙  Advanced Settings",
+            height=42,
+            width=170,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#444455",
+            text_color="#8888cc",
+            hover_color="#1a1a2a",
+            font=(res.FONT_LABEL[0], 12),
+            command=self._open_advanced_settings
+        )
+        self.btn_advanced.pack(side="left", padx=(10, 0), pady=14)
+
         self.btn_run = ctk.CTkButton(
             self.bottom_bar,
             text="RUN BBP SIMULATION",
@@ -701,6 +717,18 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
     def open_chino_hills_panel(self):
         """Opens the Chino Hills read-only reference panel as a popup."""
         ChinoHillsPanel(self.winfo_toplevel())
+
+    def _open_advanced_settings(self):
+        """
+        Opens the Advanced Settings panel for editing BBP GP simulation
+        parameters in the velocity model config file (labasin500_velmodel_config.txt).
+        BBP source files are never modified — the velmodel config is the safe
+        override point, as verified in hfsims.py and genslip.py.
+        """
+        AdvancedSettingsPanel(
+            self.winfo_toplevel(),
+            model_name="LABasin500"
+        )
 
     # ------------------------------------------------------------------
     # BBP SIMULATION

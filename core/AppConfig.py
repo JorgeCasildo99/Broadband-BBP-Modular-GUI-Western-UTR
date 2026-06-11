@@ -36,6 +36,15 @@ class AppConfig:
     # For custom profile — list of selected module names in order
     custom_modules      = []
 
+    # Advanced GP simulation parameters
+    # Set to True when the user has saved custom values to the velmodel config file.
+    # Used by ResultsPanel to show a warning badge when non-default params were used.
+    advanced_params_active = False
+
+    # Mirror of what was last saved — keys match PARAM_DEFS in AdvancedSettingsPanel
+    # e.g. {"KAPPA": 0.04, "QFEXP": 0.6, "SDROP": 50, ...}
+    advanced_params = {}
+
     @classmethod
     def _resolve_base_path(cls):
         """Resolves BASE_PATH from WSL home if not already set."""
