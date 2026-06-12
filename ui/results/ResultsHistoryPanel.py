@@ -641,16 +641,32 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             text_color=profile_color
         ).grid(row=0, column=4, padx=12, pady=15, sticky="w")
 
-        # View Results — ALWAYS shown for every row
+        # --- BUTTON GROUP: View Results + Delete ---
+        btn_frame = ctk.CTkFrame(row, fg_color="transparent")
+        btn_frame.grid(row=0, column=5, padx=12, pady=10, sticky="e")
+
         ctk.CTkButton(
-            row,
+            btn_frame,
             text="View Results",
             width=110, height=32,
             fg_color=res.COLOR_PRIMARY,
             hover_color="#004070",
             font=(res.FONT_LABEL[0], 11),
             command=lambda s=session: self._open_session(s)
-        ).grid(row=0, column=5, padx=12, pady=10, sticky="e")
+        ).pack(side="left", padx=(0, 4))
+
+        ctk.CTkButton(
+            btn_frame,
+            text="🗑",
+            width=32, height=32,
+            fg_color="#2a0000",
+            hover_color="#440000",
+            border_width=1,
+            border_color="#661111",
+            text_color="#ff6666",
+            font=(res.FONT_LABEL[0], 13),
+            command=lambda s=session: self._confirm_delete(s)
+        ).pack(side="left")
 
     # ------------------------------------------------------------------
     # FILTER
@@ -672,6 +688,192 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             or query in s.get("profile_label", "").lower()
         ]
         self._render_sessions(filtered)
+
+    # ------------------------------------------------------------------
+    # DELETE RUN
+    # ------------------------------------------------------------------
+
+    def _confirm_delete(self, session):
+        """
+        Shows a confirmation dialog listing exactly what will be deleted
+        before performing any destructive operation.
+        Deletes:
+          - ~/bbp_data/outdata/{run_id}/   (all results)
+          - ~/bbp_data/indata/{run_id}/    (input copies BBP made)
+          - ~/bbp_projects/{session}/      (original session folder)
+        """
+        run_id       = session.get("run_id", "N/A")
+        outdata_path = session.get("outdata_path", "")
+        session_path = session.get("session_path", "")
+        exp_name     = session.get("exp_name", "Unknown")
+
+        # Resolve indata path
+        bbp_data  = WSLBridge.run_command("echo $BBP_DATA_DIR").stdout.strip()
+        if not bbp_data:
+            bbp_data = f"{WSLBridge.get_wsl_home()}/bbp_data"
+        indata_path = f"{bbp_data}/indata/{run_id}"
+
+        # Build the list of folders that actually exist
+        to_delete = []
+        for path, label in [
+            (outdata_path, "Results (outdata)"),
+            (indata_path,  "Input copies (indata)"),
+            (session_path, "Session folder (bbp_projects)"),
+        ]:
+            if path and WSLBridge.wsl_path_exists(path):
+                to_delete.append((path, label))
+
+        # --- CONFIRMATION WINDOW ---
+        win = ctk.CTkToplevel(self)
+        win.title("Confirm Delete")
+        win.geometry("540x360")
+        win.configure(fg_color="#1a0000")
+        win.transient(self)
+        win.resizable(False, False)
+
+        def _ready():
+            try:
+                win.grab_set()
+                win.lift()
+                win.focus_force()
+            except Exception:
+                pass
+        win.after(150, _ready)
+
+        # Header
+        ctk.CTkLabel(
+            win,
+            text="⚠  Delete Simulation Run",
+            font=(res.FONT_LABEL[0], 15, "bold"),
+            text_color="#ff6666"
+        ).pack(pady=(20, 4), padx=20, anchor="w")
+
+        ctk.CTkLabel(
+            win,
+            text=f"Run ID: {run_id}  —  {exp_name}",
+            font=("Courier", 11),
+            text_color="#aaaaaa"
+        ).pack(padx=20, anchor="w")
+
+        ctk.CTkLabel(
+            win,
+            text="This action cannot be undone. The following folders will be permanently deleted:",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="#ccaaaa",
+            wraplength=500,
+            justify="left"
+        ).pack(pady=(12, 4), padx=20, anchor="w")
+
+        # List of folders to delete
+        folder_frame = ctk.CTkFrame(
+            win, fg_color="#2a0000",
+            border_width=1, border_color="#661111",
+            corner_radius=6
+        )
+        folder_frame.pack(fill="x", padx=20, pady=(0, 12))
+
+        if to_delete:
+            for path, label in to_delete:
+                row = ctk.CTkFrame(folder_frame, fg_color="transparent")
+                row.pack(fill="x", padx=12, pady=3)
+                ctk.CTkLabel(
+                    row,
+                    text=f"  {label}:",
+                    font=(res.FONT_LABEL[0], 10, "bold"),
+                    text_color="#ff8888",
+                    width=180, anchor="w"
+                ).pack(side="left")
+                ctk.CTkLabel(
+                    row,
+                    text=path,
+                    font=("Courier", 9),
+                    text_color="#cc6666",
+                    anchor="w",
+                    wraplength=300,
+                    justify="left"
+                ).pack(side="left")
+        else:
+            ctk.CTkLabel(
+                folder_frame,
+                text="  No folders found for this run.",
+                font=(res.FONT_LABEL[0], 11),
+                text_color="#888888"
+            ).pack(padx=12, pady=8)
+
+        # Buttons
+        btn_row = ctk.CTkFrame(win, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(0, 20))
+
+        ctk.CTkButton(
+            btn_row,
+            text="Cancel",
+            width=100, height=36,
+            fg_color="#333333",
+            hover_color="#444444",
+            command=win.destroy
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            btn_row,
+            text="Delete Permanently",
+            width=180, height=36,
+            fg_color="#660000",
+            hover_color="#880000",
+            border_width=1,
+            border_color="#ff4444",
+            text_color="#ff9999",
+            font=(res.FONT_LABEL[0], 12, "bold"),
+            command=lambda: self._do_delete(session, to_delete, win)
+        ).pack(side="right")
+
+    def _do_delete(self, session, to_delete, confirm_win):
+        """
+        Performs the actual deletion after user confirms.
+        Removes all listed folders via WSLBridge then refreshes the list.
+        """
+        confirm_win.destroy()
+
+        errors = []
+        for path, label in to_delete:
+            result = WSLBridge.run_command(f"rm -rf '{path}' 2>&1")
+            if result.returncode != 0:
+                errors.append(f"{label}: {result.stderr.strip() or result.stdout.strip()}")
+
+        if errors:
+            # Show error popup
+            err_win = ctk.CTkToplevel(self)
+            err_win.title("Delete Error")
+            err_win.geometry("480x200")
+            err_win.configure(fg_color="#1a0000")
+            err_win.transient(self)
+            err_win.after(150, lambda: err_win.grab_set())
+
+            ctk.CTkLabel(
+                err_win,
+                text="Some folders could not be deleted:",
+                font=(res.FONT_LABEL[0], 12, "bold"),
+                text_color="#ff6666"
+            ).pack(pady=(20, 8), padx=20, anchor="w")
+
+            for e in errors:
+                ctk.CTkLabel(
+                    err_win,
+                    text=f"  • {e}",
+                    font=("Courier", 10),
+                    text_color="#cc6666",
+                    justify="left"
+                ).pack(padx=20, anchor="w")
+
+            ctk.CTkButton(
+                err_win,
+                text="OK",
+                width=80, height=32,
+                fg_color="#333333",
+                command=err_win.destroy
+            ).pack(pady=16)
+
+        # Refresh the session list regardless of errors
+        self._load_sessions()
 
     # ------------------------------------------------------------------
     # OPEN SESSION

@@ -539,6 +539,88 @@ class WSLBridge:
 
         return True, ""
 
+    @classmethod
+    def save_advanced_params_snapshot(cls, run_id, bbp_data=None):
+        """
+        Snapshots the advanced GP parameter values that are currently
+        active in the velocity model config file, and saves them as
+        adv_params-{run_id}.json inside the BBP outdata folder.
+
+        Called immediately after a simulation completes so the snapshot
+        reflects exactly what BBP used for that run. ResultsPanel reads
+        this file to show per-run parameter history accurately, even for
+        runs opened months later from ResultsHistoryPanel.
+
+        If the outdata folder doesn't exist yet (race condition), the
+        write is silently skipped — old runs simply show the live config
+        values as a fallback.
+
+        Args:
+            run_id   (str) : BBP numeric run ID e.g. "8956506"
+            bbp_data (str) : BBP_DATA_DIR path. If None, resolved from WSL.
+        """
+        import json
+
+        if not run_id:
+            return
+
+        if not bbp_data:
+            bbp_data = cls.run_command("echo $BBP_DATA_DIR").stdout.strip()
+            if not bbp_data:
+                bbp_data = f"{cls.get_wsl_home()}/bbp_data"
+
+        home     = cls.get_wsl_home()
+        cfg_path = f"{home}/bbp_gf/LABasin500/labasin500_velmodel_config.txt"
+
+        # Read current active values from the velmodel config
+        raw_params = cls.read_advanced_params(cfg_path)
+
+        # Build the snapshot dict — store value, enabled state, and
+        # whether it differs from the BBP built-in default
+        bbp_defaults = {
+            "KAPPA"        : 0.04,
+            "QFEXP"        : 0.6,
+            "SDROP"        : 50,
+            "MEAN_RVFAC"   : 0.775,
+            "RANGE_RVFAC"  : 0.1,
+            "RISETIME_COEF": 2.3,
+        }
+
+        snapshot = {}
+        for key, default in bbp_defaults.items():
+            info = raw_params.get(key)
+            if info is None:
+                # Line absent — BBP used its built-in default
+                snapshot[key] = {
+                    "value"    : default,
+                    "enabled"  : False,
+                    "is_custom": False,
+                    "source"   : "bbp_default",
+                }
+            elif not info["enabled"]:
+                # Line commented — BBP used its built-in default
+                snapshot[key] = {
+                    "value"    : info["value"],
+                    "enabled"  : False,
+                    "is_custom": False,
+                    "source"   : "bbp_default",
+                }
+            else:
+                # Active override
+                is_custom = abs(info["value"] - default) > 1e-9
+                snapshot[key] = {
+                    "value"    : info["value"],
+                    "enabled"  : True,
+                    "is_custom": is_custom,
+                    "source"   : "custom" if is_custom else "active_default",
+                }
+
+        # Write JSON snapshot to outdata folder
+        snapshot_path = f"{bbp_data}/outdata/{run_id}/adv_params-{run_id}.json"
+        json_content  = json.dumps(snapshot, indent=2)
+        cls.write_wsl_file(snapshot_path, json_content)
+        # Errors are silently ignored — snapshot is best-effort
+
     # ------------------------------------------------------------------
     # LIST FILES IN WSL DIRECTORY
     # ------------------------------------------------------------------

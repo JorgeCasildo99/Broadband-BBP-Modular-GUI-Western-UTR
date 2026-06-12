@@ -682,8 +682,17 @@ class AdvancedSettingsPanel(ctk.CTkToplevel):
         win.geometry("520x400")
         win.configure(fg_color="#1a1a1a")
         win.transient(self)
-        win.grab_set()
-        win.lift()
+
+        # Delay grab_set until the window is fully rendered —
+        # calling it immediately causes TclError: grab failed: window not viewable
+        def _ready():
+            try:
+                win.grab_set()
+                win.lift()
+                win.focus_force()
+            except Exception:
+                pass
+        win.after(150, _ready)
 
         ctk.CTkLabel(
             win,

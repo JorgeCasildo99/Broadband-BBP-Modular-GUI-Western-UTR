@@ -608,6 +608,37 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
         src_lines.append(f"SEED = {self.adv_inputs['SEED'].get()}\n")
         src_content = "".join(src_lines)
 
+        # --- APPEND ADVANCED GP PARAMS AS COMMENTS ---
+        # Read current active values from the velmodel config and append
+        # them as a comment block so ResultsPanel can recover them later
+        # by simply reading the .src file — no separate snapshot needed.
+        home     = WSLBridge.get_wsl_home()
+        cfg_path = f"{home}/bbp_gf/LABasin500/labasin500_velmodel_config.txt"
+        adv      = WSLBridge.read_advanced_params(cfg_path)
+
+        bbp_defaults = {
+            "KAPPA"        : 0.04,
+            "QFEXP"        : 0.6,
+            "SDROP"        : 50,
+            "MEAN_RVFAC"   : 0.775,
+            "RANGE_RVFAC"  : 0.1,
+            "RISETIME_COEF": 2.3,
+        }
+
+        adv_lines = ["\n# --- ADVANCED GP PARAMETERS (at time of run) ---\n"]
+        for key, default in bbp_defaults.items():
+            info = adv.get(key)
+            if info is None or not info["enabled"]:
+                # BBP will use its built-in default
+                adv_lines.append(f"# ADV_{key} = {default}  [BBP_DEFAULT]\n")
+            else:
+                val       = info["value"]
+                is_custom = abs(val - default) > 1e-9
+                tag       = "CUSTOM" if is_custom else "ACTIVE"
+                adv_lines.append(f"# ADV_{key} = {val}  [{tag}]\n")
+
+        src_content += "".join(adv_lines)
+
         # --- BUILD .stl CONTENT ---
         lat = float(self.src_inputs["LAT_TOP_CENTER"].get())
         lon = float(self.src_inputs["LON_TOP_CENTER"].get())
@@ -721,9 +752,9 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
     def _open_advanced_settings(self):
         """
         Opens the Advanced Settings panel for editing BBP GP simulation
-        parameters in the velocity model config file (labasin500_velmodel_config.txt).
-        BBP source files are never modified — the velmodel config is the safe
-        override point, as verified in hfsims.py and genslip.py.
+        parameters in the velocity model config file.
+        Changes are written to labasin500_velmodel_config.txt and will be
+        captured in the .src file comment block on the next Save & Validate.
         """
         AdvancedSettingsPanel(
             self.winfo_toplevel(),
