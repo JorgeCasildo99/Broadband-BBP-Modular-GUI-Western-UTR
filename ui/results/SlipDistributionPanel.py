@@ -329,29 +329,26 @@ class SlipDistributionPanel(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             parent,
-            text="Contour divisor (BBP default = 2.0):",
+            text="Contour divisor:  2.0  (fixed — matches BBP exactly)",
             font=(res.FONT_LABEL[0], 10),
             text_color="gray"
         ).pack(anchor="w", padx=16, pady=(6, 0))
 
         ctk.CTkLabel(
             parent,
-            text="n_levels = (max_t − min_t) / divisor\n"
+            text="n_levels = (max_t − min_t) / 2.0\n"
                  "min 10 levels enforced (BBP rule)\n"
                  "Each level = one rupture time isochrone\n"
-                 "One level can draw many curve segments",
+                 "One level can draw many curve segments\n"
+                 "This value is hardcoded in BBP's plot_srf.py\n"
+                 "and is not user-adjustable.",
             font=("Courier", 8),
             text_color="#444444",
             justify="left"
-        ).pack(anchor="w", padx=16)
+        ).pack(anchor="w", padx=16, pady=(0, 4))
 
+        # Fixed at BBP's hardcoded value — never exposed to the user
         self._contour_interval = ctk.StringVar(value="2.0")
-        ctk.CTkEntry(
-            parent,
-            textvariable=self._contour_interval,
-            width=80, height=28,
-            font=(res.FONT_LABEL[0], 11)
-        ).pack(anchor="w", padx=16, pady=(2, 4))
 
         # Contour line width slider
         ctk.CTkLabel(

@@ -657,14 +657,14 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
 
         ctk.CTkButton(
             btn_frame,
-            text="🗑",
+            text="D",
             width=32, height=32,
             fg_color="#2a0000",
             hover_color="#440000",
             border_width=1,
             border_color="#661111",
             text_color="#ff6666",
-            font=(res.FONT_LABEL[0], 13),
+            font=(res.FONT_LABEL[0], 13, "bold"),
             command=lambda s=session: self._confirm_delete(s)
         ).pack(side="left")
 

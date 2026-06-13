@@ -788,55 +788,72 @@ class ResultsPanel(ctk.CTkToplevel):
         snapshot        = {}
         snapshot_source = "current config (no .src block found)"
 
-        # Try reading from .src comment block first
-        ok_src, src_raw = WSLBridge.read_wsl_file(self._src_file)
-        if ok_src and src_raw:
-            found_any = False
-            for line in src_raw.splitlines():
-                line = line.strip()
-                # Format: # ADV_KAPPA = 0.04  [BBP_DEFAULT]
-                if not line.startswith("# ADV_"):
-                    continue
-                try:
-                    # Strip leading "# ADV_"
-                    body    = line[6:]                         # "KAPPA = 0.04  [BBP_DEFAULT]"
-                    key_val = body.split("[")[0].strip()       # "KAPPA = 0.04"
-                    tag     = body.split("[")[1].rstrip("]")   # "BBP_DEFAULT"
-                    key, val_str = key_val.split("=", 1)
-                    key     = key.strip()
-                    val     = float(val_str.strip())
-                    enabled = tag.strip() in ("CUSTOM", "ACTIVE")
-                    is_cust = tag.strip() == "CUSTOM"
-                    snapshot[key] = {
-                        "value"    : val,
-                        "enabled"  : enabled,
-                        "is_custom": is_cust,
-                        "tag"      : tag.strip(),
-                    }
-                    found_any = True
-                except Exception:
-                    continue
+        if self._is_validation:
+            # Validation runs (Chino Hills, Whittier Narrows, GMPE, etc.)
+            # use BBP's pre-packaged .src files — these were never passed
+            # through generate_files(), so they have no # ADV_ comment block.
+            # Validation simulations also do not go through the Advanced
+            # Settings panel, so BBP always uses its built-in defaults
+            # for KAPPA/QFEXP/SDROP/MEAN_RVFAC/RANGE_RVFAC/RISETIME_COEF
+            # regardless of what is currently set in labasin500_velmodel_config.txt.
+            snapshot_source = "BBP built-in defaults (validation run)"
+            for d in adv_defs:
+                snapshot[d["key"]] = {
+                    "value"    : d["default"],
+                    "enabled"  : False,
+                    "is_custom": False,
+                    "tag"      : "BBP_DEFAULT",
+                }
+        else:
+            # Try reading from .src comment block first
+            ok_src, src_raw = WSLBridge.read_wsl_file(self._src_file)
+            if ok_src and src_raw:
+                found_any = False
+                for line in src_raw.splitlines():
+                    line = line.strip()
+                    # Format: # ADV_KAPPA = 0.04  [BBP_DEFAULT]
+                    if not line.startswith("# ADV_"):
+                        continue
+                    try:
+                        # Strip leading "# ADV_"
+                        body    = line[6:]                         # "KAPPA = 0.04  [BBP_DEFAULT]"
+                        key_val = body.split("[")[0].strip()       # "KAPPA = 0.04"
+                        tag     = body.split("[")[1].rstrip("]")   # "BBP_DEFAULT"
+                        key, val_str = key_val.split("=", 1)
+                        key     = key.strip()
+                        val     = float(val_str.strip())
+                        enabled = tag.strip() in ("CUSTOM", "ACTIVE")
+                        is_cust = tag.strip() == "CUSTOM"
+                        snapshot[key] = {
+                            "value"    : val,
+                            "enabled"  : enabled,
+                            "is_custom": is_cust,
+                            "tag"      : tag.strip(),
+                        }
+                        found_any = True
+                    except Exception:
+                        continue
 
-            if found_any:
-                snapshot_source = ".src file (saved at run time)"
+                if found_any:
+                    snapshot_source = ".src file (saved at run time)"
 
-        # Fallback: read live velmodel config
-        if not snapshot:
-            snapshot_source = "current config (no .src block — old run)"
-            home        = WSLBridge.get_wsl_home()
-            cfg_path    = f"{home}/bbp_gf/LABasin500/labasin500_velmodel_config.txt"
-            raw_params  = WSLBridge.read_advanced_params(cfg_path)
-            bbp_defaults = {d["key"]: d["default"] for d in adv_defs}
-            for key, default in bbp_defaults.items():
-                info = raw_params.get(key)
-                if info is None or not info["enabled"]:
-                    snapshot[key] = {"value": default, "enabled": False,
-                                     "is_custom": False, "tag": "BBP_DEFAULT"}
-                else:
-                    is_custom = abs(info["value"] - default) > 1e-9
-                    snapshot[key] = {"value": info["value"], "enabled": True,
-                                     "is_custom": is_custom,
-                                     "tag": "CUSTOM" if is_custom else "ACTIVE"}
+            # Fallback: read live velmodel config (non-validation runs only)
+            if not snapshot:
+                snapshot_source = "current config (no .src block — old run)"
+                home        = WSLBridge.get_wsl_home()
+                cfg_path    = f"{home}/bbp_gf/LABasin500/labasin500_velmodel_config.txt"
+                raw_params  = WSLBridge.read_advanced_params(cfg_path)
+                bbp_defaults = {d["key"]: d["default"] for d in adv_defs}
+                for key, default in bbp_defaults.items():
+                    info = raw_params.get(key)
+                    if info is None or not info["enabled"]:
+                        snapshot[key] = {"value": default, "enabled": False,
+                                         "is_custom": False, "tag": "BBP_DEFAULT"}
+                    else:
+                        is_custom = abs(info["value"] - default) > 1e-9
+                        snapshot[key] = {"value": info["value"], "enabled": True,
+                                         "is_custom": is_custom,
+                                         "tag": "CUSTOM" if is_custom else "ACTIVE"}
 
         # --- Column headers ---
         hdr_row = ctk.CTkFrame(adv_frame, fg_color="#111122", corner_radius=0)
@@ -925,15 +942,25 @@ class ResultsPanel(ctk.CTkToplevel):
             ).grid(row=0, column=4, padx=12, pady=6, sticky="w")
 
         # Footer
-        ctk.CTkLabel(
-            adv_frame,
-            text=(
+        if self._is_validation:
+            footer_text = (
+                f"Source: {snapshot_source}  —  "
+                "Validation events use BBP's pre-packaged source files and always run with "
+                "BBP's built-in default GP parameters, independent of the Advanced Settings panel."
+            )
+        else:
+            footer_text = (
                 f"Source: {snapshot_source}  —  "
                 "CUSTOM = user-modified  |  ACTIVE = BBP default explicitly set  |  "
                 "BBP_DEFAULT = built-in fallback (commented or absent in config)"
-            ),
+            )
+
+        ctk.CTkLabel(
+            adv_frame,
+            text=footer_text,
             font=(res.FONT_LABEL[0], 9),
-            text_color="#444455", justify="left", anchor="w"
+            text_color="#444455", justify="left", anchor="w",
+            wraplength=860
         ).pack(anchor="w", padx=12, pady=(2, 8))
 
         # ------------------------------------------------------------------
