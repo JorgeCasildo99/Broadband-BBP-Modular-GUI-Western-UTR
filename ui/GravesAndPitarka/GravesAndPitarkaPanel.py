@@ -13,7 +13,6 @@ import core.Resources as res
 from ui.PanelResources.StationPanel import StationPanel
 from ui.GravesAndPitarka.ChinoHillsPanel import ChinoHillsPanel
 from ui.SimulationPanel import SimulationPanel
-from ui.AdvancedSettingsPanel import AdvancedSettingsPanel
 
 
 class GravesAndPitarkaPanel(ctk.CTkFrame):
@@ -359,21 +358,6 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
         )
         self.help_label.place(x=0, y=0)
 
-        self.btn_advanced = ctk.CTkButton(
-            self.bottom_bar,
-            text="⚙  Advanced Settings",
-            height=42,
-            width=170,
-            fg_color="transparent",
-            border_width=1,
-            border_color="#444455",
-            text_color="#8888cc",
-            hover_color="#1a1a2a",
-            font=(res.FONT_LABEL[0], 12),
-            command=self._open_advanced_settings
-        )
-        self.btn_advanced.pack(side="left", padx=(10, 0), pady=14)
-
         self.btn_run = ctk.CTkButton(
             self.bottom_bar,
             text="RUN BBP SIMULATION",
@@ -492,7 +476,14 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
     # ------------------------------------------------------------------
 
     def add_manual_station(self):
-        """Validates and adds a manual station to the map."""
+        """Validates and adds a manual station to the map.
+
+        If the station falls outside the LABasin500 model extent, the
+        station is still added (BBP does not block this either — it
+        silently clips to the nearest available Green's Function entry),
+        but a clear warning is shown so the user understands the result
+        for that station will not be scientifically reliable.
+        """
         try:
             lon  = float(self.ent_man_lon.get())
             lat  = float(self.ent_man_lat.get())
@@ -501,10 +492,21 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
             self.manual_station_list.append((lon, lat, name))
             self.trigger_map_update()
 
-            self.help_label.configure(
-                text=f"Station {name} added at ({lat:.4f}, {lon:.4f}).",
-                text_color="gold"
-            )
+            if StationPanel.is_inside_basin(lon, lat):
+                self.help_label.configure(
+                    text=f"Station {name} added at ({lat:.4f}, {lon:.4f}).",
+                    text_color="gold"
+                )
+            else:
+                self.help_label.configure(
+                    text=(
+                        f"⚠ Station {name} added at ({lat:.4f}, {lon:.4f}) — this is OUTSIDE "
+                        f"the LABasin500 model boundary. BBP will silently clip to the nearest "
+                        f"available Green's Function, so results for this station will not be "
+                        f"scientifically reliable."
+                    ),
+                    text_color="#ff6666"
+                )
             self.ent_man_lon.delete(0, "end")
             self.ent_man_lat.delete(0, "end")
             self.ent_man_name.delete(0, "end")
@@ -607,37 +609,6 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
         src_lines.append(f"DWID = {self.adv_inputs['DWID'].get()}\n")
         src_lines.append(f"SEED = {self.adv_inputs['SEED'].get()}\n")
         src_content = "".join(src_lines)
-
-        # --- APPEND ADVANCED GP PARAMS AS COMMENTS ---
-        # Read current active values from the velmodel config and append
-        # them as a comment block so ResultsPanel can recover them later
-        # by simply reading the .src file — no separate snapshot needed.
-        home     = WSLBridge.get_wsl_home()
-        cfg_path = f"{home}/bbp_gf/LABasin500/labasin500_velmodel_config.txt"
-        adv      = WSLBridge.read_advanced_params(cfg_path)
-
-        bbp_defaults = {
-            "KAPPA"        : 0.04,
-            "QFEXP"        : 0.6,
-            "SDROP"        : 50,
-            "MEAN_RVFAC"   : 0.775,
-            "RANGE_RVFAC"  : 0.1,
-            "RISETIME_COEF": 2.3,
-        }
-
-        adv_lines = ["\n# --- ADVANCED GP PARAMETERS (at time of run) ---\n"]
-        for key, default in bbp_defaults.items():
-            info = adv.get(key)
-            if info is None or not info["enabled"]:
-                # BBP will use its built-in default
-                adv_lines.append(f"# ADV_{key} = {default}  [BBP_DEFAULT]\n")
-            else:
-                val       = info["value"]
-                is_custom = abs(val - default) > 1e-9
-                tag       = "CUSTOM" if is_custom else "ACTIVE"
-                adv_lines.append(f"# ADV_{key} = {val}  [{tag}]\n")
-
-        src_content += "".join(adv_lines)
 
         # --- BUILD .stl CONTENT ---
         lat = float(self.src_inputs["LAT_TOP_CENTER"].get())
@@ -748,18 +719,6 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
     def open_chino_hills_panel(self):
         """Opens the Chino Hills read-only reference panel as a popup."""
         ChinoHillsPanel(self.winfo_toplevel())
-
-    def _open_advanced_settings(self):
-        """
-        Opens the Advanced Settings panel for editing BBP GP simulation
-        parameters in the velocity model config file.
-        Changes are written to labasin500_velmodel_config.txt and will be
-        captured in the .src file comment block on the next Save & Validate.
-        """
-        AdvancedSettingsPanel(
-            self.winfo_toplevel(),
-            model_name="LABasin500"
-        )
 
     # ------------------------------------------------------------------
     # BBP SIMULATION

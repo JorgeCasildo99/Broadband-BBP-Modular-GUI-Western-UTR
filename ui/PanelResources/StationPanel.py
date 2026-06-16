@@ -5,6 +5,7 @@ import math
 import random
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.path import Path as MplPath
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
@@ -15,6 +16,41 @@ from core.ChinoHillsResources import get_station_coords, get_station_full
 
 
 class StationPanel(ctk.CTkFrame):
+
+    # LABasin500 model extent polygon — same coordinates used for the
+    # green dashed boundary line drawn in redraw(). Kept as a class
+    # constant so the plotting code and the containment check (used for
+    # the outside-boundary warning) always agree on the exact same shape.
+    LABASIN500_BOUNDARY_LONS = [
+        -119.30, -119.00, -118.70, -118.40, -118.10,
+        -117.80, -117.50, -117.30, -117.20, -117.30,
+        -117.50, -117.80, -118.00, -118.20, -118.50,
+        -118.70, -119.00, -119.20, -119.40, -119.30
+    ]
+    LABASIN500_BOUNDARY_LATS = [
+        34.00, 33.70, 33.50, 33.40, 33.42,
+        33.50, 33.60, 33.75, 34.00, 34.30,
+        34.50, 34.55, 34.60, 34.55, 34.45,
+        34.30, 34.20, 34.10, 34.05, 34.00
+    ]
+
+    @classmethod
+    def is_inside_basin(cls, lon, lat):
+        """
+        Returns True if (lon, lat) falls inside the LABasin500 model
+        extent polygon, False otherwise.
+
+        Stations placed outside this polygon are not guaranteed to have
+        valid Green's Functions for the GP method — BBP does not raise
+        an error for this, it silently clips to the nearest available
+        Green's Function entry, which can silently produce inaccurate
+        results. This check exists purely to warn the user up front.
+        """
+        boundary_path = MplPath(
+            list(zip(cls.LABASIN500_BOUNDARY_LONS, cls.LABASIN500_BOUNDARY_LATS))
+        )
+        return bool(boundary_path.contains_point((lon, lat)))
+
     def __init__(self, master, update_callback=None, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
 
@@ -349,10 +385,19 @@ class StationPanel(ctk.CTkFrame):
                     text_color="orange"
                 )
             else:
-                self.lbl_click_info.configure(
-                    text=f"Station: {s_id}   |   Lat: {s_lat:.5f}°   |   Lon: {s_lon:.5f}°",
-                    text_color=res.COLOR_SUCCESS
-                )
+                if self.is_inside_basin(s_lon, s_lat):
+                    self.lbl_click_info.configure(
+                        text=f"Station: {s_id}   |   Lat: {s_lat:.5f}°   |   Lon: {s_lon:.5f}°",
+                        text_color=res.COLOR_SUCCESS
+                    )
+                else:
+                    self.lbl_click_info.configure(
+                        text=(
+                            f"⚠ Station: {s_id}   |   Lat: {s_lat:.5f}°   |   Lon: {s_lon:.5f}°   "
+                            f"—   outside LABasin500, Green's Functions are not reliable here"
+                        ),
+                        text_color="#ff6666"
+                    )
 
             # Remove previous highlight before drawing a new one
             if self._highlight_scatter is not None:
@@ -369,11 +414,22 @@ class StationPanel(ctk.CTkFrame):
             )
             self.canvas.draw()
         else:
-            # No station nearby — show raw coordinates of the clicked point
-            self.lbl_click_info.configure(
-                text=f"Empty Location   |   Lat: {click_lat:.5f}   |   Lon: {click_lon:.5f}",
-                text_color="#aaaaaa"
-            )
+            # No station nearby — show raw coordinates of the clicked point,
+            # plus a warning if the point falls outside the LABasin500 extent
+            if self.is_inside_basin(click_lon, click_lat):
+                self.lbl_click_info.configure(
+                    text=f"Empty Location   |   Lat: {click_lat:.5f}   |   Lon: {click_lon:.5f}",
+                    text_color="#aaaaaa"
+                )
+            else:
+                self.lbl_click_info.configure(
+                    text=(
+                        f"⚠ Outside LABasin500 boundary   |   Lat: {click_lat:.5f}   |   "
+                        f"Lon: {click_lon:.5f}   —   a station here will not have reliable "
+                        f"Green's Functions"
+                    ),
+                    text_color="#ff6666"
+                )
             # Remove any existing highlight since no station was selected
             if self._highlight_scatter is not None:
                 try:
@@ -775,18 +831,8 @@ class StationPanel(ctk.CTkFrame):
             # LA BASIN BOUNDARY (toggleable)
             # ------------------------------------------------------------------
             if self._show_basin_boundary.get():
-                la_basin_lons = [
-                    -119.30, -119.00, -118.70, -118.40, -118.10,
-                    -117.80, -117.50, -117.30, -117.20, -117.30,
-                    -117.50, -117.80, -118.00, -118.20, -118.50,
-                    -118.70, -119.00, -119.20, -119.40, -119.30
-                ]
-                la_basin_lats = [
-                    34.00, 33.70, 33.50, 33.40, 33.42,
-                    33.50, 33.60, 33.75, 34.00, 34.30,
-                    34.50, 34.55, 34.60, 34.55, 34.45,
-                    34.30, 34.20, 34.10, 34.05, 34.00
-                ]
+                la_basin_lons = self.LABASIN500_BOUNDARY_LONS
+                la_basin_lats = self.LABASIN500_BOUNDARY_LATS
                 self.ax.plot(
                     la_basin_lons + [la_basin_lons[0]],
                     la_basin_lats + [la_basin_lats[0]],
@@ -822,27 +868,50 @@ class StationPanel(ctk.CTkFrame):
                     label="Fault Top Center"
                 )
 
-            # Auto-generated stations
+            # Auto-generated stations — split by LABasin500 boundary
+            # containment so stations outside the model extent are
+            # immediately visible in red rather than blending in.
             if stations:
-                lons = [s[0] for s in stations]
-                lats = [s[1] for s in stations]
-                self.ax.scatter(
-                    lons, lats,
-                    color="#3b8ed0", s=25, alpha=0.7, zorder=5,
-                    label="Synthetic Stations (BBP output points)"
-                )
+                in_lons,  in_lats  = [], []
+                out_lons, out_lats = [], []
+                for s_lon, s_lat, _s_id in stations:
+                    if self.is_inside_basin(s_lon, s_lat):
+                        in_lons.append(s_lon)
+                        in_lats.append(s_lat)
+                    else:
+                        out_lons.append(s_lon)
+                        out_lats.append(s_lat)
 
-            # Manual stations
+                if in_lons:
+                    self.ax.scatter(
+                        in_lons, in_lats,
+                        color="#3b8ed0", s=25, alpha=0.7, zorder=5,
+                        label="Synthetic Stations (BBP output points)"
+                    )
+                if out_lons:
+                    self.ax.scatter(
+                        out_lons, out_lats,
+                        color="#ff3b3b", s=30, alpha=0.85, zorder=6,
+                        edgecolors="#ffaaaa", linewidths=0.6,
+                        label="Outside LABasin500 (unreliable GF)"
+                    )
+
+            # Manual stations — gold if inside the LABasin500 boundary,
+            # red if outside (same warning color as auto-generated stations)
             for m_lon, m_lat, m_name in manual_stations:
                 stations.append((m_lon, m_lat, m_name))
+                is_inside = self.is_inside_basin(m_lon, m_lat)
+                marker_color = "gold" if is_inside else "#ff3b3b"
+                label_color  = "gold" if is_inside else "#ff6666"
                 self.ax.scatter(
                     m_lon, m_lat,
-                    color="gold", s=55, edgecolors="white", zorder=12
+                    color=marker_color, s=55, edgecolors="white", zorder=12
                 )
                 self.ax.annotate(
-                    m_name, (m_lon, m_lat),
+                    m_name if is_inside else f"{m_name} ⚠",
+                    (m_lon, m_lat),
                     textcoords="offset points", xytext=(5, 5),
-                    fontsize=7, color="gold"
+                    fontsize=7, color=label_color
                 )
 
             # --- REAL STATIONS LAYER (Chino Hills) ---
