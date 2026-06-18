@@ -627,6 +627,41 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
         src_lines.append(f"DLEN = {self.adv_inputs['DLEN'].get()}\n")
         src_lines.append(f"DWID = {self.adv_inputs['DWID'].get()}\n")
         src_lines.append(f"SEED = {self.adv_inputs['SEED'].get()}\n")
+
+        # --- ADVANCED GP PARAMETERS SNAPSHOT ---
+        # Records the exact KAPPA/QFEXP/SDROP/MEAN_RVFAC/RANGE_RVFAC/
+        # RISETIME_COEF state from the velmodel config file at the
+        # moment this run was generated. This is a BBP-ignored comment
+        # block (same mechanism as the # METHOD marker below) that lets
+        # ResultsPanel show exactly which parameter values were in
+        # effect for this specific run, since the live config file can
+        # change again before the user looks at past results — without
+        # this snapshot, there would be no way to know in hindsight
+        # whether a given run used a custom override or a BBP default.
+        # Tag meanings: ACTIVE = custom value enabled at run time,
+        # BBP_DEFAULT = no override active, value shown is BBP's own
+        # hardcoded default.
+        try:
+            home     = WSLBridge.get_wsl_home()
+            cfg_path = f"{home}/bbp_gf/LABasin500/labasin500_velmodel_config.txt"
+            raw_params = WSLBridge.read_advanced_params(cfg_path) or {}
+        except Exception:
+            raw_params = {}
+
+        src_lines.append("\n")
+        src_lines.append("# --- ADVANCED GP PARAMETERS (at time of run) ---\n")
+        for key, default in WSLBridge._ADV_PARAM_DEFAULTS.items():
+            info = raw_params.get(key)
+            dec  = WSLBridge._ADV_PARAM_DECIMALS.get(key, 4)
+            if info is None or not info.get("enabled", False):
+                val = default
+                tag = "BBP_DEFAULT"
+            else:
+                val = info["value"]
+                tag = "ACTIVE"
+            val_str = f"{val:.{dec}f}" if dec > 0 else str(int(round(val)))
+            src_lines.append(f"# {key} = {val_str} [{tag}]\n")
+
         src_lines.append("\n")
         src_lines.append("# --- SIMULATION METHOD (at time of run) ---\n")
         src_lines.append("# METHOD = GP\n")

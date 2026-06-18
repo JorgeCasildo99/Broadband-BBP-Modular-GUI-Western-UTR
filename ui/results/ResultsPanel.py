@@ -10,6 +10,7 @@
 import customtkinter as ctk
 import os
 import sys
+import re
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
@@ -55,6 +56,18 @@ class ResultsPanel(ctk.CTkToplevel):
         self._is_validation   = self._detect_validation()
         self._val_event_name  = self._detect_val_event_name()
         self._val_event_short = self._detect_val_event_short()
+
+        # Detect simulation method (GP vs EXSIM). Primary source is the
+        # "# METHOD = ..." comment block appended to the .src file at
+        # generate-files time (same mechanism as the Advanced GP
+        # Parameters block) — this travels with the run permanently and
+        # doesn't depend on index-<run_id>.html still existing or being
+        # parseable. Falls back to the HTML 'Simulation Method' field
+        # for older runs made before this marker existed (e.g. runs
+        # made during earlier GUI versions), and finally to validation
+        # events, which always use GP and never carry this comment.
+        self._sim_method = self._detect_simulation_method()
+        self._is_exsim   = (self._sim_method == "EXSIM")
 
         self._build_ui()
         self.after(200, self._on_ready)
@@ -108,6 +121,78 @@ class ResultsPanel(ctk.CTkToplevel):
         xml_path = f"{self._outdata}/{self._run_id}.xml"
         ok, content = WSLBridge.read_wsl_file(xml_path)
         return content if ok else ""
+
+    def _read_advanced_params_snapshot(self, src_content):
+        """
+        Parses the "# --- ADVANCED GP PARAMETERS (at time of run) ---"
+        comment block out of .src file content, written by
+        GravesAndPitarkaPanel.generate_files() at run time.
+
+        Expected line format: "# KEY = value [TAG]" where TAG is
+        either "ACTIVE" (custom override was enabled at run time) or
+        "BBP_DEFAULT" (no override active, value shown is BBP's own
+        hardcoded default).
+
+        Returns a dict: { key: (value_str, tag) } for every parameter
+        line found. Returns an empty dict if the block is absent (e.g.
+        runs made before this snapshot feature existed) — the caller
+        treats an empty dict as "section not shown" rather than an error.
+        """
+        snapshot = {}
+        if not src_content:
+            return snapshot
+
+        for raw_line in src_content.splitlines():
+            line = raw_line.strip()
+            if not line.startswith("#") or "[" not in line or "]" not in line or "=" not in line:
+                continue
+            try:
+                body = line.lstrip("#").strip()      # "KAPPA = 0.0400 [ACTIVE]"
+                key_val, _, tag_part = body.partition("[")
+                tag = tag_part.rstrip("]").strip()
+                if tag not in ("ACTIVE", "BBP_DEFAULT"):
+                    continue
+                key, _, val = key_val.partition("=")
+                key = key.strip()
+                val = val.strip()
+                if not key or not val:
+                    continue
+                snapshot[key] = (val, tag)
+            except Exception:
+                continue
+
+        return snapshot
+
+    def _detect_simulation_method(self):
+        """
+        Returns "GP", "EXSIM", or "UNKNOWN".
+
+        Primary source: the "# METHOD = ..." comment appended to the
+        .src file at generate-files time (same mechanism as the
+        Advanced GP Parameters block — a BBP-ignored comment that
+        travels with the run permanently via indata/<run_id>/).
+
+        Fallback: the 'Simulation Method' field in index-<run_id>.html,
+        used for runs made before this .src marker existed.
+
+        Validation runs always use BBP's pre-packaged .src files (which
+        never carry this marker) and are always GP, so they fall straight
+        through to "GP" via the validation check rather than guessing.
+        """
+        if self._detect_validation():
+            return "GP"
+
+        if self._src_file:
+            ok, src_content = WSLBridge.read_wsl_file(self._src_file)
+            if ok and src_content:
+                m = re.search(r'#\s*METHOD\s*=\s*(\w+)', src_content, re.IGNORECASE)
+                if m:
+                    method = m.group(1).strip().upper()
+                    if method in ("GP", "EXSIM"):
+                        return method
+
+        # Fallback for older runs predating the .src marker
+        return WSLBridge.detect_simulation_method(self._run_id, self._outdata)
 
     def _detect_validation(self):
         """
@@ -239,6 +324,23 @@ class ResultsPanel(ctk.CTkToplevel):
             font=(res.FONT_TITLE[0], 18, "bold"), text_color="white"
         ).pack(side="left", padx=10, pady=12)
 
+        # Method badge — shown for every run (GP or EXSIM)
+        if self._sim_method in ("GP", "EXSIM"):
+            method_colors = {
+                "GP"   : ("#0a2a3a", "#3b8ed0"),
+                "EXSIM": ("#3a1a00", "#ffaa44"),
+            }
+            bg_color, fg_color = method_colors[self._sim_method]
+            ctk.CTkLabel(
+                bar,
+                text=self._sim_method,
+                font=(res.FONT_LABEL[0], 11, "bold"),
+                text_color=fg_color,
+                fg_color=bg_color,
+                corner_radius=4,
+                padx=8, pady=3
+            ).pack(side="left", padx=(8, 0), pady=12)
+
         # Validation badge — only shown for validation runs
         self._val_badge = ctk.CTkLabel(
             bar,
@@ -325,7 +427,15 @@ class ResultsPanel(ctk.CTkToplevel):
         )
         self.tabs.pack(fill="both", expand=True)
 
-        tab_names = ["Simulation Info", "Source & Stations", "Station Map", "Rupture Map", "Slip Distribution"]
+        if self._is_exsim:
+            # ExSIM has no kinematic rupture model — no .srf file exists,
+            # so Source & Stations (slip info), Rupture Map, and Slip
+            # Distribution are not applicable and are omitted entirely
+            # rather than shown as "not available" placeholders.
+            tab_names = ["Simulation Info", "Station Map"]
+        else:
+            tab_names = ["Simulation Info", "Source & Stations", "Station Map", "Rupture Map", "Slip Distribution"]
+
         if self._is_validation:
             tab_names.append("GoF Summary")
 
@@ -345,7 +455,9 @@ class ResultsPanel(ctk.CTkToplevel):
         Works for all profiles without assumptions.
         """
         self._build_info_tab()
-        self._build_src_tab()
+
+        if not self._is_exsim:
+            self._build_src_tab()
 
         # Station Map
         station_map = f"{self._outdata}/station_map.png"
@@ -358,19 +470,20 @@ class ResultsPanel(ctk.CTkToplevel):
                 "Add Plot_Map to your pipeline to generate this output."
             )
 
-        # Rupture Map
-        rupture_map    = f"{self._outdata}/{self._base_name}.png"
-        rupture_map_fb = f"{self._outdata}/{self._run_id}.png"
-        if WSLBridge.wsl_path_exists(rupture_map):
-            self._build_image_tab_content("Rupture Map", rupture_map)
-        elif WSLBridge.wsl_path_exists(rupture_map_fb):
-            self._build_image_tab_content("Rupture Map", rupture_map_fb)
-        else:
-            self._build_unavailable_tab(
-                "Rupture Map",
-                "Rupture map (Genslip) was not found.\n"
-                "This is generated automatically when Genslip runs."
-            )
+        if not self._is_exsim:
+            # Rupture Map
+            rupture_map    = f"{self._outdata}/{self._base_name}.png"
+            rupture_map_fb = f"{self._outdata}/{self._run_id}.png"
+            if WSLBridge.wsl_path_exists(rupture_map):
+                self._build_image_tab_content("Rupture Map", rupture_map)
+            elif WSLBridge.wsl_path_exists(rupture_map_fb):
+                self._build_image_tab_content("Rupture Map", rupture_map_fb)
+            else:
+                self._build_unavailable_tab(
+                    "Rupture Map",
+                    "Rupture map (Genslip) was not found.\n"
+                    "This is generated automatically when Genslip runs."
+                )
 
         # Station List
         check = WSLBridge.run_command(
@@ -387,8 +500,10 @@ class ResultsPanel(ctk.CTkToplevel):
         if self._is_validation:
             self._build_gof_tab()
 
-        # Slip Distribution
-        self._build_slip_tab()
+        # Slip Distribution — not applicable for ExSIM (no .srf, no
+        # kinematic rupture model — see class docstring / tab_names)
+        if not self._is_exsim:
+            self._build_slip_tab()
 
     def _build_unavailable_tab(self, tab_name, message):
         tab   = self.tabs.tab(tab_name)
@@ -690,11 +805,16 @@ class ResultsPanel(ctk.CTkToplevel):
                     seed_value = line.split("=", 1)[-1].strip()
                     break
 
+        method_label = {
+            "GP"   : "GP — Graves & Pitarka",
+            "EXSIM": "EXSIM — Stochastic (Boore 2003)",
+        }.get(self._sim_method, self._sim_method)
+
         rows = [
             ("Broadband Version",  "22.4.0"),
             ("Velocity Model",     velocity_model),
             ("Simulation ID",      self._run_id),
-            ("Simulation Method",  "GP — Graves & Pitarka"),
+            ("Simulation Method",  method_label),
             ("Simulation Profile", AppConfig.get_profile_label()),
             ("Seed",               seed_value),
             ("Experiment Name",    self._base_name),
@@ -760,210 +880,68 @@ class ResultsPanel(ctk.CTkToplevel):
                         text_color="#444444"
                     ).pack(side="left", padx=(0, 2))
 
-        # ------------------------------------------------------------------
-        # ADVANCED GP PARAMETERS SECTION
-        # Values are read from the comment block appended to the .src file
-        # at the time generate_files() was called — lines starting with
-        # "# ADV_KEY = value  [TAG]"
-        # Falls back to live velmodel config if no comment block found.
-        # ------------------------------------------------------------------
-        _section_label(scroll, "Advanced GP Parameters")
+        # --- ADVANCED GP PARAMETERS ---
+        # GP-only: ExSIM never uses KAPPA/QFEXP/SDROP/MEAN_RVFAC/
+        # RANGE_RVFAC/RISETIME_COEF, so this section is simply omitted
+        # for ExSIM runs rather than shown empty or "not applicable".
+        if not self._is_exsim:
+            adv_snapshot = self._read_advanced_params_snapshot(src_content if ok_src else "")
+            if adv_snapshot:
+                _section_label(scroll, "Advanced GP Parameters")
+                adv_frame = ctk.CTkFrame(
+                    scroll, fg_color="#222222",
+                    border_width=1, border_color="#444", corner_radius=6
+                )
+                adv_frame.pack(fill="x", pady=(0, 12))
 
-        adv_frame = ctk.CTkFrame(
-            scroll, fg_color="#1a1a2a",
-            border_width=1, border_color="#333355", corner_radius=6
-        )
-        adv_frame.pack(fill="x", pady=(0, 12))
+                hdr_row = ctk.CTkFrame(adv_frame, fg_color="#111122", corner_radius=0)
+                hdr_row.pack(fill="x")
+                hdr_row.grid_columnconfigure((0, 1, 2), weight=1, uniform="adv_col")
 
-        # --- Parse advanced params from .src file comment block ---
-        adv_defs = [
-            {"key": "KAPPA",         "label": "KAPPA (κ)",    "default": 0.04,  "unit": "s",       "desc": "Near-surface HF attenuation operator (hfsims)"},
-            {"key": "QFEXP",         "label": "QFEXP",         "default": 0.6,   "unit": "—",       "desc": "Quality factor frequency exponent Q(f)=Q0×f^QFEXP (hfsims)"},
-            {"key": "SDROP",         "label": "SDROP",         "default": 50,    "unit": "bars",    "desc": "Stress drop — HF energy at source (hfsims)"},
-            {"key": "MEAN_RVFAC",    "label": "MEAN_RVFAC",    "default": 0.775, "unit": "× Vs",    "desc": "Mean rupture velocity fraction (genslip + hfsims)"},
-            {"key": "RANGE_RVFAC",   "label": "RANGE_RVFAC",   "default": 0.1,   "unit": "× Vs",    "desc": "Rupture velocity randomization range (genslip + hfsims)"},
-            {"key": "RISETIME_COEF", "label": "RISETIME_COEF", "default": 2.3,   "unit": "s/√km²",  "desc": "Rise time coefficient (genslip)"},
-        ]
+                for col, txt in enumerate(["Parameter", "Value Used", "Status"]):
+                    ctk.CTkLabel(
+                        hdr_row, text=txt,
+                        font=(res.FONT_LABEL[0], 11, "bold"),
+                        text_color=res.COLOR_PRIMARY,
+                        anchor="w"
+                    ).grid(row=0, column=col, padx=12, pady=6, sticky="ew")
 
-        snapshot        = {}
-        snapshot_source = "current config (no .src block found)"
-
-        if self._is_validation:
-            # Validation runs (Chino Hills, Whittier Narrows, GMPE, etc.)
-            # use BBP's pre-packaged .src files — these were never passed
-            # through generate_files(), so they have no # ADV_ comment block.
-            # Validation simulations also do not go through the Advanced
-            # Settings panel, so BBP always uses its built-in defaults
-            # for KAPPA/QFEXP/SDROP/MEAN_RVFAC/RANGE_RVFAC/RISETIME_COEF
-            # regardless of what is currently set in labasin500_velmodel_config.txt.
-            snapshot_source = "BBP built-in defaults (validation run)"
-            for d in adv_defs:
-                snapshot[d["key"]] = {
-                    "value"    : d["default"],
-                    "enabled"  : False,
-                    "is_custom": False,
-                    "tag"      : "BBP_DEFAULT",
+                status_colors = {
+                    "ACTIVE"     : "#ffaa55",
+                    "BBP_DEFAULT": "#888888",
                 }
-        else:
-            # Try reading from .src comment block first
-            ok_src, src_raw = WSLBridge.read_wsl_file(self._src_file)
-            if ok_src and src_raw:
-                found_any = False
-                for line in src_raw.splitlines():
-                    line = line.strip()
-                    # Format: # ADV_KAPPA = 0.04  [BBP_DEFAULT]
-                    if not line.startswith("# ADV_"):
+
+                # Fixed display order, independent of dict insertion order,
+                # so the table always reads the same way run to run.
+                param_order = ["KAPPA", "QFEXP", "SDROP",
+                               "MEAN_RVFAC", "RANGE_RVFAC", "RISETIME_COEF"]
+
+                for row_i, key in enumerate(param_order):
+                    if key not in adv_snapshot:
                         continue
-                    try:
-                        # Strip leading "# ADV_"
-                        body    = line[6:]                         # "KAPPA = 0.04  [BBP_DEFAULT]"
-                        key_val = body.split("[")[0].strip()       # "KAPPA = 0.04"
-                        tag     = body.split("[")[1].rstrip("]")   # "BBP_DEFAULT"
-                        key, val_str = key_val.split("=", 1)
-                        key     = key.strip()
-                        val     = float(val_str.strip())
-                        enabled = tag.strip() in ("CUSTOM", "ACTIVE")
-                        is_cust = tag.strip() == "CUSTOM"
-                        snapshot[key] = {
-                            "value"    : val,
-                            "enabled"  : enabled,
-                            "is_custom": is_cust,
-                            "tag"      : tag.strip(),
-                        }
-                        found_any = True
-                    except Exception:
-                        continue
+                    val, tag = adv_snapshot[key]
+                    row_bg = "#1a1a1a" if row_i % 2 == 0 else "#222222"
+                    row_frame = ctk.CTkFrame(adv_frame, fg_color=row_bg, corner_radius=0)
+                    row_frame.pack(fill="x")
+                    row_frame.grid_columnconfigure((0, 1, 2), weight=1, uniform="adv_col")
 
-                if found_any:
-                    snapshot_source = ".src file (saved at run time)"
+                    ctk.CTkLabel(
+                        row_frame, text=key,
+                        font=("Courier", 11, "bold"), text_color="white",
+                        anchor="w"
+                    ).grid(row=0, column=0, padx=12, pady=5, sticky="ew")
+                    ctk.CTkLabel(
+                        row_frame, text=val,
+                        font=("Courier", 11), text_color="white",
+                        anchor="w"
+                    ).grid(row=0, column=1, padx=12, pady=5, sticky="ew")
+                    ctk.CTkLabel(
+                        row_frame, text=tag,
+                        font=(res.FONT_LABEL[0], 10, "bold"),
+                        text_color=status_colors.get(tag, "white"),
+                        anchor="w"
+                    ).grid(row=0, column=2, padx=12, pady=5, sticky="ew")
 
-            # Fallback: read live velmodel config (non-validation runs only)
-            if not snapshot:
-                snapshot_source = "current config (no .src block — old run)"
-                home        = WSLBridge.get_wsl_home()
-                cfg_path    = f"{home}/bbp_gf/LABasin500/labasin500_velmodel_config.txt"
-                raw_params  = WSLBridge.read_advanced_params(cfg_path)
-                bbp_defaults = {d["key"]: d["default"] for d in adv_defs}
-                for key, default in bbp_defaults.items():
-                    info = raw_params.get(key)
-                    if info is None or not info["enabled"]:
-                        snapshot[key] = {"value": default, "enabled": False,
-                                         "is_custom": False, "tag": "BBP_DEFAULT"}
-                    else:
-                        is_custom = abs(info["value"] - default) > 1e-9
-                        snapshot[key] = {"value": info["value"], "enabled": True,
-                                         "is_custom": is_custom,
-                                         "tag": "CUSTOM" if is_custom else "ACTIVE"}
-
-        # --- Column headers ---
-        hdr_row = ctk.CTkFrame(adv_frame, fg_color="#111122", corner_radius=0)
-        hdr_row.pack(fill="x")
-        hdr_row.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
-
-        for col, txt in enumerate(["Parameter", "Value Used", "BBP Default", "Unit", "Notes"]):
-            ctk.CTkLabel(
-                hdr_row, text=txt,
-                font=(res.FONT_LABEL[0], 11, "bold"),
-                text_color=res.COLOR_PRIMARY
-            ).grid(row=0, column=col, padx=12, pady=6, sticky="w")
-
-        # --- Parameter rows ---
-        for i, d in enumerate(adv_defs):
-            key      = d["key"]
-            info     = snapshot.get(key, {"value": d["default"], "enabled": False,
-                                          "is_custom": False, "tag": "BBP_DEFAULT"})
-            row_bg   = "#1e1e2e" if i % 2 == 0 else "#181828"
-
-            row = ctk.CTkFrame(adv_frame, fg_color=row_bg, corner_radius=0)
-            row.pack(fill="x")
-            row.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
-
-            val       = info.get("value", d["default"])
-            tag       = info.get("tag", "BBP_DEFAULT")
-            enabled   = info.get("enabled", False)
-            is_custom = info.get("is_custom", False)
-
-            # Format value
-            val_text = f"{val:.4f}" if isinstance(val, float) and (val % 1 != 0) else str(int(val) if val == int(val) else val)
-
-            # Badge colours
-            if not enabled:
-                val_color  = "#aaaaaa"
-                badge_fg   = "#2a2a2a"
-                badge_tc   = "#666666"
-            elif is_custom:
-                val_color  = "#ffdd88"
-                badge_fg   = "#2a1a00"
-                badge_tc   = "#ffdd88"
-            else:
-                val_color  = res.COLOR_SUCCESS
-                badge_fg   = "#0a1f0a"
-                badge_tc   = res.COLOR_SUCCESS
-
-            # Col 0 — name
-            ctk.CTkLabel(
-                row, text=d["label"],
-                font=(res.FONT_LABEL[0], 12, "bold"),
-                text_color="white", anchor="w"
-            ).grid(row=0, column=0, padx=12, pady=6, sticky="w")
-
-            # Col 1 — value + badge
-            cell = ctk.CTkFrame(row, fg_color="transparent")
-            cell.grid(row=0, column=1, padx=12, pady=6, sticky="w")
-            ctk.CTkLabel(
-                cell, text=val_text,
-                font=("Courier", 12, "bold"),
-                text_color=val_color
-            ).pack(side="left")
-            ctk.CTkLabel(
-                cell, text=f"  {tag}",
-                font=(res.FONT_LABEL[0], 9, "bold"),
-                text_color=badge_tc, fg_color=badge_fg,
-                corner_radius=3, padx=5, pady=1
-            ).pack(side="left", padx=(6, 0))
-
-            # Col 2 — default
-            ctk.CTkLabel(
-                row, text=str(d["default"]),
-                font=("Courier", 11), text_color="#555555", anchor="w"
-            ).grid(row=0, column=2, padx=12, pady=6, sticky="w")
-
-            # Col 3 — unit
-            ctk.CTkLabel(
-                row, text=d["unit"],
-                font=(res.FONT_LABEL[0], 10), text_color="#444466", anchor="w"
-            ).grid(row=0, column=3, padx=12, pady=6, sticky="w")
-
-            # Col 4 — description
-            ctk.CTkLabel(
-                row, text=d["desc"],
-                font=(res.FONT_LABEL[0], 10), text_color="#555566",
-                anchor="w", justify="left", wraplength=320
-            ).grid(row=0, column=4, padx=12, pady=6, sticky="w")
-
-        # Footer
-        if self._is_validation:
-            footer_text = (
-                f"Source: {snapshot_source}  —  "
-                "Validation events use BBP's pre-packaged source files and always run with "
-                "BBP's built-in default GP parameters, independent of the Advanced Settings panel."
-            )
-        else:
-            footer_text = (
-                f"Source: {snapshot_source}  —  "
-                "CUSTOM = user-modified  |  ACTIVE = BBP default explicitly set  |  "
-                "BBP_DEFAULT = built-in fallback (commented or absent in config)"
-            )
-
-        ctk.CTkLabel(
-            adv_frame,
-            text=footer_text,
-            font=(res.FONT_LABEL[0], 9),
-            text_color="#444455", justify="left", anchor="w",
-            wraplength=860
-        ).pack(anchor="w", padx=12, pady=(2, 8))
-
-        # ------------------------------------------------------------------
         _section_label(scroll, "Linked Files")
         links_frame = ctk.CTkFrame(
             scroll, fg_color="#222222",
@@ -1236,5 +1214,6 @@ class ResultsPanel(ctk.CTkToplevel):
             self._outdata, self._fas_folder,
             self._run_id, self._profile,
             is_validation    = self._is_validation,
-            val_event_short  = self._val_event_short
+            val_event_short  = self._val_event_short,
+            is_exsim         = self._is_exsim
         )

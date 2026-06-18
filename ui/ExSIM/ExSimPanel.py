@@ -11,6 +11,7 @@ from core.AppConfig import AppConfig
 from core.WSLBridge import WSLBridge
 import core.Resources as res
 from ui.PanelResources.StationPanel import StationPanel
+from ui.GravesAndPitarka.ChinoHillsPanel import ChinoHillsPanel
 
 
 class ExSimPanel(ctk.CTkFrame):
@@ -255,7 +256,20 @@ class ExSimPanel(ctk.CTkFrame):
             hover_color="#2a2a2a",
             command=self.toggle_real_stations
         )
-        self.btn_real_stations.pack(side="left", expand=True, padx=0)
+        self.btn_real_stations.pack(side="left", expand=True, padx=(0, 5))
+
+        self.btn_chino_ref = ctk.CTkButton(
+            self.btn_f2,
+            text="Chino Hills Reference",
+            height=36,
+            fg_color="#333333",
+            border_width=1,
+            border_color=res.COLOR_PRIMARY,
+            text_color="white",
+            hover_color="#2a2a2a",
+            command=self.open_chino_hills_panel
+        )
+        self.btn_chino_ref.pack(side="left", expand=True, padx=(5, 0))
 
         # --- SIMULATION PROFILE (informational only — ExSIM is Full Pipeline only) ---
         self.profile_frame = ctk.CTkFrame(
@@ -487,6 +501,17 @@ class ExSimPanel(ctk.CTkFrame):
                 border_color="orange",
                 text_color="orange"
             )
+
+    def open_chino_hills_panel(self):
+        """
+        Opens the Chino Hills 2008 reference panel — same panel GP
+        uses. The reference data (real magnitude, fault geometry,
+        station list) is useful context regardless of simulation
+        method; some fields (DLEN/DWID) are GP-specific subfault
+        discretization values ExSIM doesn't use, but they're shown
+        as-is rather than maintaining a separate ExSIM-trimmed copy.
+        """
+        ChinoHillsPanel(self.winfo_toplevel())
 
     # ------------------------------------------------------------------
     # INPUT VALIDATION

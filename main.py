@@ -479,7 +479,7 @@ class MainPanel(ctk.CTk):
 
         ctk.CTkButton(
             self.container,
-            text="⟳  Retry",
+            text="Retry",
             width=120,
             height=38,
             fg_color=res.COLOR_PRIMARY,
