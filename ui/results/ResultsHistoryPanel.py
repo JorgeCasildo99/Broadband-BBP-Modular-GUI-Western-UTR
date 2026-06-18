@@ -9,6 +9,7 @@
 import customtkinter as ctk
 import os
 import sys
+import re
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -239,6 +240,7 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
 
         # --- EXPERIMENTER NAME from inside the .src file ---
         experimenter = ""
+        src_content  = ""
         if src_path:
             ok, src_content = WSLBridge.read_wsl_file(src_path)
             if ok:
@@ -336,6 +338,22 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
                 parts = gof_fname.split("-")
                 val_event_name = parts[1] if len(parts) > 1 else "Validation"
 
+        # --- DETECT SIMULATION METHOD (GP vs EXSIM) ---
+        # Primary source: "# METHOD = ..." comment appended to the .src
+        # file at generate-files time (same mechanism as the Advanced
+        # GP Parameters block — a BBP-ignored comment that travels with
+        # the run permanently). Reuses src_content already read above
+        # for the experimenter name, avoiding a redundant file read.
+        # Falls back to the 'Simulation Method' field in
+        # index-<run_id>.html for runs made before this marker existed.
+        sim_method = ""
+        if src_content:
+            m = re.search(r'#\s*METHOD\s*=\s*(\w+)', src_content, re.IGNORECASE)
+            if m and m.group(1).strip().upper() in ("GP", "EXSIM"):
+                sim_method = m.group(1).strip().upper()
+        if not sim_method:
+            sim_method = WSLBridge.detect_simulation_method(run_id, folder)
+
         return {
             "run_id"          : run_id,
             "exp_name"        : exp_name,
@@ -347,6 +365,7 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             "complete"        : True,
             "is_validation"   : has_gof,
             "val_event_name"  : val_event_name,
+            "sim_method"      : sim_method,
         }
 
     def _build_run_id_map(self, bbp_xml_path, base_path):
@@ -507,6 +526,11 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
         except Exception:
             date_str = folder_name
 
+        # --- DETECT SIMULATION METHOD (GP vs EXSIM) ---
+        sim_method = "UNKNOWN"
+        if run_id and run_id != "N/A" and complete:
+            sim_method = WSLBridge.detect_simulation_method(run_id, outdata_path)
+
         return {
             "folder_name"   : folder_name,
             "session_path"  : session_path,
@@ -519,6 +543,7 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             "profile_label" : profile_label,
             "is_validation" : False,
             "val_event_name": "",
+            "sim_method"    : sim_method,
         }
 
     # ------------------------------------------------------------------
@@ -585,6 +610,24 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
 
         name_frame = ctk.CTkFrame(row, fg_color="transparent")
         name_frame.grid(row=0, column=2, padx=12, pady=10, sticky="w")
+
+        # Method badge (GP / EXSIM) — shown for every row, validation or not
+        sim_method = session.get("sim_method", "UNKNOWN")
+        if sim_method in ("GP", "EXSIM"):
+            method_colors = {
+                "GP"   : ("#0a2a3a", "#3b8ed0"),
+                "EXSIM": ("#3a1a00", "#ffaa44"),
+            }
+            bg_color, fg_color = method_colors[sim_method]
+            ctk.CTkLabel(
+                name_frame,
+                text=sim_method,
+                font=(res.FONT_LABEL[0], 9, "bold"),
+                text_color=fg_color,
+                fg_color=bg_color,
+                corner_radius=4,
+                padx=6, pady=2
+            ).pack(side="left", padx=(0, 6))
 
         if is_validation:
             # Yellow validation badge

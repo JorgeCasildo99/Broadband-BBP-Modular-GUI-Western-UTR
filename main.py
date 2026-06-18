@@ -10,6 +10,7 @@ sys.path.insert(0, BASE_DIR)                                      # root: bbp_gu
 sys.path.insert(0, os.path.join(BASE_DIR, "core"))               # bbp_gui/core/
 sys.path.insert(0, os.path.join(BASE_DIR, "ui"))                 # bbp_gui/ui/
 sys.path.insert(0, os.path.join(BASE_DIR, "ui", "GravesAndPitarka"))  # bbp_gui/ui/GravesAndPitarka/
+sys.path.insert(0, os.path.join(BASE_DIR, "ui", "ExSIM"))           # bbp_gui/ui/ExSIM/
 sys.path.insert(0, os.path.join(BASE_DIR, "ui", "results"))        # bbp_gui/ui/results/
 
 # --- CORE IMPORTS ---
@@ -22,6 +23,7 @@ from core.WSLBridge import WSLBridge
 import core.Resources as res
 from ui.Dashboard import DashboardPanel
 from ui.GravesAndPitarka.GravesAndPitarkaPanel import GravesAndPitarkaPanel
+from ui.ExSIM.ExSimPanel             import ExSimPanel
 from ui.SimulationPanel import SimulationPanel
 from ui.results.ResultsPanel        import ResultsPanel
 from ui.results.ResultsHistoryPanel import ResultsHistoryPanel
@@ -204,13 +206,33 @@ class MainPanel(ctk.CTk):
         """
         Destroys loading content and loads the main Dashboard panel.
         This is the home screen researchers return to between modules.
+
+        Resets Advanced GP Parameters back to BBP defaults on disk
+        every time the Dashboard loads. This is intentional: custom
+        overrides saved via AdvancedSettingsPanel are session-scoped —
+        leaving the GP panel without resetting should never silently
+        carry custom values into a future, unrelated run.
         """
         for widget in self.container.winfo_children():
             widget.destroy()
 
+        try:
+            home     = WSLBridge.get_wsl_home()
+            cfg_path = f"{home}/bbp_gf/LABasin500/labasin500_velmodel_config.txt"
+            WSLBridge.reset_advanced_params_to_defaults(cfg_path)
+        except Exception:
+            # Non-fatal — if WSL isn't reachable yet (e.g. very first
+            # launch before the environment check completes), just
+            # skip the reset rather than blocking the Dashboard.
+            pass
+
+        AppConfig.advanced_params_active = False
+        AppConfig.advanced_params        = {}
+
         self.dashboard = DashboardPanel(
             self.container,
             open_gp_callback         = self.show_rupture_module,
+            open_exsim_callback      = self.show_exsim_module,
             open_results_callback    = self.open_results_history,
             open_config_callback     = self.open_configuration_panel,
             open_validation_callback = self.open_validation_panel
@@ -317,6 +339,72 @@ class MainPanel(ctk.CTk):
             on_run_callback=self.show_simulation_panel
         )
         self.gp_module.pack(fill="both", expand=True)
+
+    def show_exsim_module(self):
+        """
+        Switches from Dashboard to ExSimPanel.
+        Nav bar lives in MainPanel — ExSimPanel is fully self-contained,
+        mirroring how show_rupture_module wires GravesAndPitarkaPanel.
+        """
+        for widget in self.container.winfo_children():
+            widget.destroy()
+
+        # --- NAVIGATION BAR --- (contains title to save vertical space)
+        nav_bar = ctk.CTkFrame(
+            self.container,
+            height=44,
+            fg_color="#111111",
+            corner_radius=6
+        )
+        nav_bar.pack(fill="x", pady=(0, 6))
+        nav_bar.pack_propagate(False)
+
+        ctk.CTkButton(
+            nav_bar,
+            text="← Back to Dashboard",
+            width=160,
+            height=30,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#444444",
+            text_color="white",
+            hover_color="#2a2a2a",
+            command=self.load_dashboard
+        ).pack(side="left", padx=10, pady=7)
+
+        # Title in the center of the nav bar
+        title_frame = ctk.CTkFrame(nav_bar, fg_color="transparent")
+        title_frame.pack(side="left", expand=True, fill="both")
+
+        ctk.CTkLabel(
+            title_frame,
+            text="EXSIM",
+            font=(res.FONT_LABEL[0], 13, "bold"),
+            text_color="#ffaa44"
+        ).pack(side="left", padx=(0, 6), pady=7)
+
+        ctk.CTkLabel(
+            title_frame,
+            text="Stochastic Method (Boore 2003)  —  Broadband Ground Motion Simulation  —  LABasin500",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="gray"
+        ).pack(side="left", pady=7)
+
+        session_name = os.path.basename(AppConfig.current_session_folder) \
+            if AppConfig.current_session_folder else "No session"
+        ctk.CTkLabel(
+            nav_bar,
+            text=f"Session: {session_name}",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="gray"
+        ).pack(side="right", padx=15, pady=7)
+
+        # --- EXSIM PANEL ---
+        self.exsim_module = ExSimPanel(
+            self.container,
+            on_run_callback=self.show_simulation_panel
+        )
+        self.exsim_module.pack(fill="both", expand=True)
 
     def show_simulation_panel(self):
         """

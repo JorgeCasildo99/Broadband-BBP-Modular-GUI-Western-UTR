@@ -38,8 +38,9 @@ class SimulationPanel(ctk.CTkToplevel):
 
         # Get the module list for the selected profile
         self._profile         = AppConfig.simulation_profile
+        self._method          = getattr(AppConfig, "simulation_method", "GP")
         self._custom_modules  = list(AppConfig.custom_modules) if AppConfig.simulation_profile == "custom" else []
-        self._active_modules  = get_modules_for_profile(self._profile, self._custom_modules)
+        self._active_modules  = get_modules_for_profile(self._profile, self._custom_modules, method=self._method)
 
         # Track current module index for progress
         self._current_module  = 0
@@ -85,6 +86,22 @@ class SimulationPanel(ctk.CTkToplevel):
             font=(res.FONT_TITLE[0], 22, "bold"),
             text_color="white"
         ).pack(side="left", padx=25, pady=15)
+
+        if self._method in ("GP", "EXSIM"):
+            method_colors = {
+                "GP"   : ("#0a2a3a", "#3b8ed0"),
+                "EXSIM": ("#3a1a00", "#ffaa44"),
+            }
+            bg_color, fg_color = method_colors[self._method]
+            ctk.CTkLabel(
+                title_frame,
+                text=self._method,
+                font=(res.FONT_LABEL[0], 12, "bold"),
+                text_color=fg_color,
+                fg_color=bg_color,
+                corner_radius=4,
+                padx=8, pady=3
+            ).pack(side="left", padx=(0, 25), pady=15)
 
         ctk.CTkLabel(
             title_frame,
@@ -225,6 +242,7 @@ class SimulationPanel(ctk.CTkToplevel):
         """
         self._log("=" * 60)
         self._log(f"BBP Simulation Starting")
+        self._log(f"Method      : {self._method}")
         self._log(f"Experiment  : {self.base_name}")
         self._log(f"Session     : {AppConfig.current_session_folder}")
         self._log(f"Source file : {self.src_path}")
@@ -239,7 +257,8 @@ class SimulationPanel(ctk.CTkToplevel):
             self.src_path,
             self.stl_path,
             profile=self._profile,
-            custom_modules=self._custom_modules if self._custom_modules else None
+            custom_modules=self._custom_modules if self._custom_modules else None,
+            method=self._method
         )
 
         if not ok:
@@ -308,13 +327,30 @@ class SimulationPanel(ctk.CTkToplevel):
 
         self._log(stripped)
 
-        # Detect module start from BBP output
-        for i, (module_name, module_desc) in enumerate(self._active_modules):
-            if f"Starting module {module_name}" in stripped or \
-               f"Running module: {module_name}" in stripped or \
-               f"Module: {module_name}" in stripped or \
-               f"{module_name}:" in stripped and i >= self._current_module:
+        # Detect module start from BBP output. BBP prints module banners
+        # like "-------NAME-------" and/or "==> Running NAME..." rather
+        # than the "Starting module NAME" style originally assumed here —
+        # confirmed against real GP and ExSIM run logs. Some modules
+        # print a banner that differs from their internal module name
+        # (e.g. Plot_Map prints "Plot MAP", RotD100 prints "RotDXX"),
+        # so explicit aliases are used for those rather than relying on
+        # name matching alone.
+        banner_aliases = {
+            "Plot_Map": ["PLOT MAP", "PLOTMAP"],
+            "RotD100" : ["ROTDXX", "ROTD100"],
+            "ExSim"   : ["EXSIM"],
+        }
 
+        stripped_upper = stripped.upper()
+        compact_upper  = stripped_upper.replace("-", "").replace(" ", "")
+        for i, (module_name, module_desc) in enumerate(self._active_modules):
+            if i < self._current_module:
+                continue
+            name_upper = module_name.upper()
+            candidates = [name_upper] + banner_aliases.get(module_name, [])
+            if any(c.replace("_", "") in compact_upper for c in candidates) \
+               or f"RUNNING {name_upper}" in stripped_upper \
+               or f"{name_upper}:" in stripped_upper:
                 self._current_module = i
                 self._update_progress(i, module_name, module_desc)
                 break

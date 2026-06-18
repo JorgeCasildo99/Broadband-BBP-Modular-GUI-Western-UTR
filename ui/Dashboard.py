@@ -93,6 +93,7 @@ class ModuleCard(ctk.CTkFrame):
 class DashboardPanel(ctk.CTkFrame):
     def __init__(self, master,
                  open_gp_callback=None,
+                 open_exsim_callback=None,
                  open_results_callback=None,
                  open_config_callback=None,
                  open_validation_callback=None):
@@ -192,8 +193,8 @@ class DashboardPanel(ctk.CTkFrame):
              "EXSIM",
              "Stochastic — Boore (2003)",
              "Stochastic broadband simulation using the ExSIM code. Generates broadband directly without LF/HF split.",
-             False,
-             None),
+             True,
+             open_exsim_callback),
 
             (1, 0,
              "Method 5",

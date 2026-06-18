@@ -33,17 +33,24 @@ class AppConfig:
     # "full", "quick", "rupture", or "custom"
     simulation_profile  = "full"
 
+    # Simulation method selected — "GP" or "EXSIM". Set by whichever
+    # panel (GravesAndPitarkaPanel or ExSimPanel) generates files,
+    # and read by XMLGenerator.save_xml() / SimulationPanel to build
+    # the correct module pipeline.
+    simulation_method   = "GP"
+
     # For custom profile — list of selected module names in order
     custom_modules      = []
 
-    # Advanced GP simulation parameters
-    # Set to True when the user has saved custom values to the velmodel config file.
-    # Used by ResultsPanel to show a warning badge when non-default params were used.
+    # Whether the user has saved custom Advanced GP Parameters this
+    # session (set True by AdvancedSettingsPanel._do_save, reset to
+    # False whenever the user returns to the Dashboard — see
+    # MainPanel.load_dashboard / WSLBridge.reset_advanced_params_to_defaults).
     advanced_params_active = False
 
-    # Mirror of what was last saved — keys match PARAM_DEFS in AdvancedSettingsPanel
-    # e.g. {"KAPPA": 0.04, "QFEXP": 0.6, "SDROP": 50, ...}
-    advanced_params = {}
+    # Snapshot of the six Advanced GP Parameter values currently active,
+    # e.g. {"KAPPA": 0.0292, "SDROP": 76, ...}. Empty when not active.
+    advanced_params        = {}
 
     @classmethod
     def _resolve_base_path(cls):

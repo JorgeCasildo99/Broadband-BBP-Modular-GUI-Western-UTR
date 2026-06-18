@@ -25,6 +25,11 @@ GF_PATH         = f"$BBP_INSTALL_GF/{VELOCITY_MODEL}/gp/{GF_FILE}"
 BBP_VERSION     = "22.4.0"
 BBP_METHOD      = "GP"
 
+# Fixed constants for ExSIM + LA Basin
+EXSIM_PAR_FILE  = "labasin_exsim.par"
+EXSIM_PAR_PATH  = f"$BBP_INSTALL_GF/{VELOCITY_MODEL}/uwo/{EXSIM_PAR_FILE}"
+EXSIM_METHOD    = "EXSIM"
+
 
 # ------------------------------------------------------------------
 # MODULE DEFINITIONS
@@ -171,6 +176,48 @@ def _genhtml_block(src_path, stl_path, src_name, stl_name):
 
 
 # ------------------------------------------------------------------
+# EXSIM MODULE DEFINITIONS
+# ExSIM collapses Genslip+Jbsim+Hfsims+Match into a single stochastic
+# module — no kinematic rupture (.srf), no separate LF/HF split.
+# Confirmed against a real BBP-generated ExSIM XML (run 1722857).
+# ------------------------------------------------------------------
+
+def _exsim_block(src_path, stl_path, src_name, stl_name):
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>ExSim</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t\t<file>{EXSIM_PAR_PATH}</file>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{EXSIM_PAR_FILE}</argument>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+def _genhtml_block_exsim(src_path, stl_path, src_name, stl_name):
+    """Same as _genhtml_block but with method argument 'EXSIM' instead of 'GP'."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>GenHTML</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t\t<argument type="NoneType">None</argument>
+\t\t\t\t<argument type="str">{EXSIM_METHOD}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+# ------------------------------------------------------------------
 # XML HEADER / FOOTER
 # ------------------------------------------------------------------
 
@@ -251,12 +298,37 @@ def _generate_rupture_xml(base_name, src_path, stl_path, acc_output=False):
     return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
 
 
+def _generate_exsim_xml(base_name, src_path, stl_path, acc_output=False):
+    """
+    ExSIM Full Pipeline — 6 modules.
+    ExSim → Plot_Map → PlotSeis → RotD100 → FAS → GenHTML
+    Stochastic broadband simulation — no kinematic rupture model,
+    no LF/HF split, no Match step. acc_output is accepted for API
+    consistency with the GP generators but has no effect here, since
+    ExSim always produces both velocity and acceleration directly.
+    """
+    src_name = f"{base_name}.src"
+    stl_name = f"{base_name}.stl"
+
+    modules = "\n".join([
+        _exsim_block(src_path, stl_path, src_name, stl_name),
+        _plot_map_block(src_path, stl_path, src_name, stl_name),
+        _plotseis_block(src_path, stl_path, src_name, stl_name),
+        _rotd100_block(stl_path, stl_name),
+        _fas_block(stl_path, stl_name),
+        _genhtml_block_exsim(src_path, stl_path, src_name, stl_name),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
 # ------------------------------------------------------------------
 # PUBLIC API
 # ------------------------------------------------------------------
 
 def generate_xml(base_name, src_path, stl_path,
-                 acc_output=False, profile="full", custom_modules=None):
+                 acc_output=False, profile="full", custom_modules=None,
+                 method="GP"):
     """
     Builds the BBP XML options file for the selected simulation profile.
 
@@ -264,13 +336,19 @@ def generate_xml(base_name, src_path, stl_path,
         base_name      (str)  : Experiment base name e.g. "john_exp1"
         src_path       (str)  : Full WSL path to the .src file
         stl_path       (str)  : Full WSL path to the .stl file
-        acc_output     (bool) : If True, Match outputs acceleration
+        acc_output     (bool) : If True, Match outputs acceleration (GP only)
         profile        (str)  : "full", "quick", "rupture", or "custom"
-        custom_modules (list) : Module names for custom profile
+        custom_modules (list) : Module names for custom profile (GP only)
+        method         (str)  : "GP" or "EXSIM" — selects which module
+                                 pipeline to build. ExSIM only supports
+                                 the "full" profile (no quick/rupture/custom).
 
     Returns:
         str: The complete XML content as a string.
     """
+    if method == "EXSIM":
+        return _generate_exsim_xml(base_name, src_path, stl_path, acc_output)
+
     if profile == "quick":
         return _generate_quick_xml(base_name, src_path, stl_path, acc_output)
     elif profile == "rupture":
@@ -283,13 +361,14 @@ def generate_xml(base_name, src_path, stl_path,
 
 
 def save_xml(base_name, src_path, stl_path,
-             acc_output=False, profile="full", custom_modules=None):
+             acc_output=False, profile="full", custom_modules=None,
+             method="GP"):
     """
     Generates the XML content for the selected profile and writes it
     to the session xml/ folder inside WSL via WSLBridge.
     """
     xml_content  = generate_xml(base_name, src_path, stl_path,
-                                acc_output, profile, custom_modules)
+                                acc_output, profile, custom_modules, method)
     xml_wsl_path = f"{AppConfig.xml_path}/{base_name}.xml"
 
     ok, err = WSLBridge.write_wsl_file(xml_wsl_path, xml_content)
@@ -325,6 +404,15 @@ BBP_MODULES_QUICK = [
 
 BBP_MODULES_RUPTURE = [
     ("Genslip", "Generating slip distribution on fault plane..."),
+]
+
+BBP_MODULES_EXSIM = [
+    ("ExSim",    "Running stochastic ExSIM broadband simulation..."),
+    ("Plot_Map", "Generating fault trace and station map..."),
+    ("PlotSeis", "Plotting seismograms for all stations..."),
+    ("RotD100",  "Computing RotD50/RotD100 response spectra..."),
+    ("FAS",      "Computing Fourier Amplitude Spectra..."),
+    ("GenHTML",  "Generating HTML summary report..."),
 ]
 
 # Default — kept for backward compatibility with any existing imports
@@ -371,11 +459,14 @@ def _generate_custom_xml(base_name, src_path, stl_path,
     return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
 
 
-def get_modules_for_profile(profile, custom_modules=None):
+def get_modules_for_profile(profile, custom_modules=None, method="GP"):
     """
     Returns the module list for a given profile.
     Used by SimulationPanel to build the progress bar.
     """
+    if method == "EXSIM":
+        return BBP_MODULES_EXSIM
+
     if profile == "quick":
         return BBP_MODULES_QUICK
     elif profile == "rupture":

@@ -38,7 +38,8 @@ class StationDetailPanel(ctk.CTkToplevel):
 
     def __init__(self, master, station_id, outdata,
                  fas_folder, run_id, profile="full",
-                 is_validation=False, val_event_short=""):
+                 is_validation=False, val_event_short="",
+                 is_exsim=False):
         super().__init__(master)
 
         self.sid             = station_id
@@ -48,6 +49,7 @@ class StationDetailPanel(ctk.CTkToplevel):
         self.profile         = profile
         self.is_validation   = is_validation
         self.val_event_short = val_event_short
+        self.is_exsim        = is_exsim
 
         self.title(f"Station — {station_id}")
         self.geometry("1050x780")
@@ -97,6 +99,17 @@ class StationDetailPanel(ctk.CTkToplevel):
                 padx=6, pady=2
             ).pack(side="left", padx=(0, 10), pady=12)
 
+        if self.is_exsim:
+            ctk.CTkLabel(
+                bar,
+                text="EXSIM",
+                font=(res.FONT_LABEL[0], 10, "bold"),
+                text_color="#ffaa44",
+                fg_color="#3a1a00",
+                corner_radius=4,
+                padx=6, pady=2
+            ).pack(side="left", padx=(0, 10), pady=12)
+
         ctk.CTkLabel(
             bar, text=f"Run ID: {self.run_id}",
             font=(res.FONT_LABEL[0], 11), text_color="gray"
@@ -113,15 +126,25 @@ class StationDetailPanel(ctk.CTkToplevel):
         )
         self.tabs.pack(fill="both", expand=True, padx=10, pady=(10, 0))
 
-        # Base tabs always present
-        tab_names = ["Velocity", "Acceleration", "LF & HF", "RotD50/100", "FAS", "Raw Data"]
+        # Base tabs always present.
+        # LF & HF is omitted for ExSIM stations — ExSIM has no Jbsim/
+        # Hfsims split (it's a single-stage stochastic method), so
+        # there is no intermediate LF/HF data to show.
+        if self.is_exsim:
+            tab_names = ["Velocity", "Acceleration", "RotD50/100", "FAS", "Raw Data"]
+        else:
+            tab_names = ["Velocity", "Acceleration", "LF & HF", "RotD50/100", "FAS", "Raw Data"]
 
         # Detect if this is a GMPE event
         self._is_gmpe = self.is_validation and WSLBridge.wsl_path_exists(
             f"{self.outdata}/{self.val_event_short}_{self.run_id}_{self.sid}_gmpe.png"
         )
 
-        # Validation-only tabs
+        # Validation-only tabs. Index 2 here assumes the non-ExSIM
+        # tab_names branch above (validation runs are always GP —
+        # see ResultsPanel._detect_simulation_method, which resolves
+        # validation runs to "GP" before is_exsim is ever computed —
+        # so is_exsim and is_validation are never both True together).
         if self.is_validation:
             if self._is_gmpe:
                 tab_names.insert(2, "GMPE Comparison")
@@ -145,8 +168,9 @@ class StationDetailPanel(ctk.CTkToplevel):
                 self._build_overlay_tab()
                 self._build_rotd50_gof_tab()
 
-        # LF & HF tab — always present
-        self._build_lfhf_tab()
+        # LF & HF tab — skipped for ExSIM (see tab_names above)
+        if not self.is_exsim:
+            self._build_lfhf_tab()
 
         self._build_rotd_combined_tab()
         self._build_fas_tab()

@@ -13,6 +13,7 @@ import core.Resources as res
 from ui.PanelResources.StationPanel import StationPanel
 from ui.GravesAndPitarka.ChinoHillsPanel import ChinoHillsPanel
 from ui.SimulationPanel import SimulationPanel
+from ui.AdvancedSettingsPanel import AdvancedSettingsPanel
 
 
 class GravesAndPitarkaPanel(ctk.CTkFrame):
@@ -358,6 +359,19 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
         )
         self.help_label.place(x=0, y=0)
 
+        self.btn_advanced = ctk.CTkButton(
+            self.bottom_bar,
+            text="⚙ Advanced Settings",
+            height=42,
+            width=160,
+            fg_color="#333333",
+            border_width=1,
+            border_color="#555555",
+            hover_color="#2a2a2a",
+            command=self._open_advanced_settings
+        )
+        self.btn_advanced.pack(side="right", padx=(5, 5), pady=14)
+
         self.btn_run = ctk.CTkButton(
             self.bottom_bar,
             text="RUN BBP SIMULATION",
@@ -476,14 +490,7 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
     # ------------------------------------------------------------------
 
     def add_manual_station(self):
-        """Validates and adds a manual station to the map.
-
-        If the station falls outside the LABasin500 model extent, the
-        station is still added (BBP does not block this either — it
-        silently clips to the nearest available Green's Function entry),
-        but a clear warning is shown so the user understands the result
-        for that station will not be scientifically reliable.
-        """
+        """Validates and adds a manual station to the map."""
         try:
             lon  = float(self.ent_man_lon.get())
             lat  = float(self.ent_man_lat.get())
@@ -492,21 +499,10 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
             self.manual_station_list.append((lon, lat, name))
             self.trigger_map_update()
 
-            if StationPanel.is_inside_basin(lon, lat):
-                self.help_label.configure(
-                    text=f"Station {name} added at ({lat:.4f}, {lon:.4f}).",
-                    text_color="gold"
-                )
-            else:
-                self.help_label.configure(
-                    text=(
-                        f"⚠ Station {name} added at ({lat:.4f}, {lon:.4f}) — this is OUTSIDE "
-                        f"the LABasin500 model boundary. BBP will silently clip to the nearest "
-                        f"available Green's Function, so results for this station will not be "
-                        f"scientifically reliable."
-                    ),
-                    text_color="#ff6666"
-                )
+            self.help_label.configure(
+                text=f"Station {name} added at ({lat:.4f}, {lon:.4f}).",
+                text_color="gold"
+            )
             self.ent_man_lon.delete(0, "end")
             self.ent_man_lat.delete(0, "end")
             self.ent_man_name.delete(0, "end")
@@ -524,6 +520,29 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
         self.help_label.configure(
             text="Manual stations cleared.", text_color="gray"
         )
+
+    # ------------------------------------------------------------------
+    # ADVANCED SETTINGS
+    # ------------------------------------------------------------------
+
+    def _open_advanced_settings(self):
+        """
+        Opens AdvancedSettingsPanel for the LABasin500 model.
+        Delayed via after(150, ...) before grab_set() — opening the
+        Toplevel and calling grab_set() in the same call stack as the
+        button click can raise a TclError on some window managers
+        ("grab failed: window not viewable") if the window isn't fully
+        mapped yet.
+        """
+        def _show():
+            try:
+                AdvancedSettingsPanel(self, model_name="LABasin500")
+            except Exception as e:
+                self.help_label.configure(
+                    text=f"Could not open Advanced Settings: {e}",
+                    text_color=res.COLOR_ERROR
+                )
+        self.after(150, _show)
 
     # ------------------------------------------------------------------
     # INPUT VALIDATION
@@ -608,6 +627,9 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
         src_lines.append(f"DLEN = {self.adv_inputs['DLEN'].get()}\n")
         src_lines.append(f"DWID = {self.adv_inputs['DWID'].get()}\n")
         src_lines.append(f"SEED = {self.adv_inputs['SEED'].get()}\n")
+        src_lines.append("\n")
+        src_lines.append("# --- SIMULATION METHOD (at time of run) ---\n")
+        src_lines.append("# METHOD = GP\n")
         src_content = "".join(src_lines)
 
         # --- BUILD .stl CONTENT ---
@@ -643,10 +665,17 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
             )
             return
 
-        # Store filenames for use by the simulation stage
-        AppConfig.current_src_file = src_wsl_path
-        AppConfig.current_stl_file = stl_wsl_path
+        # Store filenames for use by the simulation stage.
+        # simulation_method is set explicitly here (not just left as
+        # whatever default AppConfig has) because it's a class-level
+        # attribute shared across the whole app — if the user opened
+        # ExSimPanel earlier in this session, AppConfig.simulation_method
+        # would still read "EXSIM" here otherwise, causing SimulationPanel
+        # to build and run the wrong method's pipeline entirely.
+        AppConfig.current_src_file  = src_wsl_path
+        AppConfig.current_stl_file  = stl_wsl_path
         AppConfig.current_base_name = base
+        AppConfig.simulation_method  = "GP"
 
         self.btn_run.configure(state="normal")
         self.help_label.configure(
@@ -728,7 +757,13 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
         """
         Validates custom module selection if Custom profile is active,
         then triggers the simulation via MainPanel callback.
+
+        simulation_method is set again here (not just in generate_files)
+        as a second safety net against AppConfig.simulation_method
+        leaking "EXSIM" from a previous ExSimPanel session into a GP run.
         """
+        AppConfig.simulation_method = "GP"
+
         if AppConfig.simulation_profile == "custom":
             if not AppConfig.custom_modules:
                 self.help_label.configure(
