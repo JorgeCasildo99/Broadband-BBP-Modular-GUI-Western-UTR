@@ -27,6 +27,7 @@ from ui.results.ImageFullscreenPanel  import ImageFullscreenPanel
 from ui.results.StationDetailPanel    import StationDetailPanel
 from ui.results.ComparisonPanel       import ComparisonPanel
 from ui.results.SlipDistributionPanel import SlipDistributionPanel
+from ui.results.FaultPlane3DPanel     import FaultPlane3DPanel
 from ui.VelocityModelPanel            import VelocityModelPanel
 
 
@@ -753,6 +754,23 @@ class ResultsPanel(ctk.CTkToplevel):
                 self, srf_path, self._run_id
             )
         ).pack()
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Open 3D Fault Plane Viewer",
+            width=280, height=48,
+            fg_color="#0a1a2a",
+            hover_color="#0f2a3a",
+            border_width=1,
+            border_color="#3b8ed0",
+            text_color="#3b8ed0",
+            font=(res.FONT_LABEL[0], 13, "bold"),
+            command=lambda: FaultPlane3DPanel(
+                self, srf_path,
+                src_file=self._src_file,
+                run_id=self._run_id
+            )
+        ).pack(pady=(10, 0))
 
         ctk.CTkLabel(
             btn_frame,

@@ -26,7 +26,7 @@ from ui.results.ImageFullscreenPanel import ImageFullscreenPanel
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 try:
     from PIL import Image
@@ -849,6 +849,11 @@ class ComparisonPanel(ctk.CTkToplevel):
         tk_w.pack(fill="both", expand=True, padx=4, pady=4)
         tk_w.bind("<Button-1>", lambda e: self._open_fullscreen())
 
+        toolbar = NavigationToolbar2Tk(cw, self.plot_frame, pack_toolbar=False)
+        toolbar.config(background="#1a1a1a")
+        toolbar.update()
+        toolbar.pack(side="bottom", fill="x", padx=4)
+
         # Summary card
         if rotd_a:
             summary = ctk.CTkFrame(
@@ -1074,6 +1079,11 @@ class ComparisonPanel(ctk.CTkToplevel):
         tk_w = cw.get_tk_widget()
         tk_w.pack(fill="both", expand=True, padx=4, pady=4)
         tk_w.bind("<Button-1>", lambda e: self._open_fullscreen())
+
+        toolbar = NavigationToolbar2Tk(cw, self.plot_frame, pack_toolbar=False)
+        toolbar.config(background="#1a1a1a")
+        toolbar.update()
+        toolbar.pack(side="bottom", fill="x", padx=4)
 
         # Summary card
         summary = ctk.CTkFrame(
@@ -1370,6 +1380,11 @@ class ComparisonPanel(ctk.CTkToplevel):
         cw.draw()
         tk_w = cw.get_tk_widget()
         tk_w.pack(fill="both", expand=True, padx=4, pady=4)
+
+        toolbar = NavigationToolbar2Tk(cw, self.plot_frame, pack_toolbar=False)
+        toolbar.config(background="#1a1a1a")
+        toolbar.update()
+        toolbar.pack(side="bottom", fill="x", padx=4)
 
         self.plot_frame._mpl_fig    = fig
         self.plot_frame._mpl_canvas = cw

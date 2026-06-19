@@ -284,12 +284,9 @@ class AdvancedSettingsPanel(ctk.CTkToplevel):
         ctk.CTkLabel(
             info,
             text=(
-                "BBP reads parameters from the velocity model config file at runtime. "
-                "Active lines (uncommented) override BBP's built-in defaults. "
-                "Commented lines (#) mean BBP uses the value from genslip_cfg.py / hfsims_cfg.py.\n"
-                "KAPPA and QFEXP are already active for LABasin500. "
-                "MEAN_RVFAC, RANGE_RVFAC, RISETIME_COEF are commented (BBP default applies). "
-                "SDROP is absent from the config — enabling it adds the line."
+                "Enabling a parameter here overrides BBP's built-in default for your simulation. "
+                "Disabled parameters use BBP's standard values automatically. "
+                "Changes are saved to the velocity model config file and take effect on the next run."
             ),
             font=(res.FONT_LABEL[0], 11),
             text_color="#aaaaaa",
