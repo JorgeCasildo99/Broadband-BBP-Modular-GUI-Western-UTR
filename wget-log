@@ -1,0 +1,79 @@
+failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:00:08--  (try: 2)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:02:34--  (try: 3)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:04:59--  (try: 4)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:07:25--  (try: 5)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:09:55--  (try: 6)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:12:22--  (try: 7)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:14:49--  (try: 8)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:17:19--  (try: 9)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:19:49--  (try:10)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:22:24--  (try:11)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:24:55--  (try:12)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:27:28--  (try:13)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:30:03--  (try:14)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:32:36--  (try:15)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:35:11--  (try:16)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:37:43--  (try:17)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:40:15--  (try:18)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:42:47--  (try:19)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Retrying.
+
+--2026-06-19 13:45:19--  (try:20)  https://g-3a9041.a78b8.36fe.data.globus.org/bbp/releases/22.4.0/fftw-3.3.8.tar.gz
+Connecting to g-3a9041.a78b8.36fe.data.globus.org (g-3a9041.a78b8.36fe.data.globus.org)|68.181.11.5|:443... failed: Connection timed out.
+Giving up.
+

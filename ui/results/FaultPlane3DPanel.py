@@ -34,11 +34,11 @@ from core.WSLBridge import WSLBridge
 from ui.results.SlipDistributionPanel import parse_srf
 
 import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers 3d projection
 
 try:
     from PIL import Image
@@ -330,7 +330,7 @@ class FaultPlane3DPanel(ctk.CTkToplevel):
             return
 
         # --- MATPLOTLIB 3D FIGURE ---
-        fig = plt.figure(figsize=(11, 8), facecolor="#111111")
+        fig = plt.figure(figsize=(11, 8), facecolor="#111111", dpi=90)
         ax  = fig.add_subplot(111, projection="3d")
         ax.set_facecolor("#111111")
 
@@ -348,6 +348,7 @@ class FaultPlane3DPanel(ctk.CTkToplevel):
             xs, ys, zs,
             facecolors=colors,
             shade=False,
+            antialiased=False,
             alpha=0.95
         )
 
@@ -436,5 +437,20 @@ class FaultPlane3DPanel(ctk.CTkToplevel):
         toolbar.config(background="#111111")
         toolbar.update()
         toolbar.pack(side="bottom", fill="x", padx=4, pady=2)
+
+        # Smooth rotation: during drag reduce surface alpha to 0
+        # (shows only wireframe/edges) for fast redraws, then restore
+        # full quality on mouse release. This makes 3D rotation feel
+        # responsive rather than sluggish since matplotlib's Agg
+        # renderer redraws the full figure on every mouse-move event.
+        def _on_drag_start(event):
+            surf.set_alpha(0.0)
+
+        def _on_drag_end(event):
+            surf.set_alpha(0.95)
+            cw.draw_idle()
+
+        fig.canvas.mpl_connect("button_press_event",   _on_drag_start)
+        fig.canvas.mpl_connect("button_release_event", _on_drag_end)
 
         plt.close(fig)
