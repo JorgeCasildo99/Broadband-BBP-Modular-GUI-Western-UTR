@@ -200,6 +200,127 @@ class ExSimPanel(ctk.CTkFrame):
         self.ent_seed.insert(0, "1234567")
         self.ent_seed.pack(side="left")
 
+        # --- ADVANCED PATH PARAMETERS ---
+        # These are the Q and geometric spreading values hardcoded as
+        # plain numbers in labasin_exsim.par. Confirmed editable by
+        # empirical test (10x Q reduction produced ~12x amplitude
+        # difference at T=0.1s — June 2026). Exposing them here lets
+        # the user adapt ExSIM for different regions (e.g. Eastern
+        # North America for Charlevoix) without manually editing the
+        # .par file. Defaults match the distributed labasin_exsim.par.
+        self.adv_exsim_expanded = False
+
+        self.adv_exsim_frame = ctk.CTkFrame(
+            self.left_column, fg_color="#1e1e1e",
+            border_width=1, border_color="#3a1a00", corner_radius=6
+        )
+        self.adv_exsim_frame.pack(fill="x", pady=(6, 0), padx=5)
+
+        self.btn_adv_exsim_toggle = ctk.CTkButton(
+            self.adv_exsim_frame,
+            text="▶  Advanced Path Parameters",
+            fg_color="transparent",
+            text_color="#ffaa44",
+            hover_color="#2a1500",
+            font=(res.FONT_LABEL[0], 12, "bold"),
+            anchor="w",
+            command=self._toggle_adv_exsim
+        )
+        self.btn_adv_exsim_toggle.pack(fill="x", padx=6, pady=4)
+
+        self.adv_exsim_content = ctk.CTkFrame(
+            self.adv_exsim_frame, fg_color="transparent"
+        )
+        # Not packed yet — revealed on toggle
+
+        # Defaults matching labasin_exsim.par exactly
+        self._adv_exsim_defaults = {
+            "QMIN"   : "150",
+            "Q0"     : "187",
+            "ETA"    : "0.55",
+            "BETA"   : "3.7",
+            "RHO"    : "2.8",
+            "GS_R1"  : "1.0",
+            "GS_S1"  : "-1.0",
+            "GS_R2"  : "40.0",
+            "GS_S2"  : "-0.5",
+        }
+
+        self.adv_exsim_inputs = {}
+
+        adv_descriptions = {
+            "QMIN" : "Minimum quality factor — lower Q = more attenuation. ENA typical: 600+.",
+            "Q0"   : "Q scale factor — Q = max(Qmin, Q0 × F^eta). ENA typical: 600–900.",
+            "ETA"  : "Q frequency exponent — controls how Q grows with frequency.",
+            "BETA" : "Reference shear wave velocity (km/s) at the source depth.",
+            "RHO"  : "Crustal density (g/cm³) at the source depth.",
+            "GS_R1": "Geometric spreading — distance (km) for first segment start.",
+            "GS_S1": "Geometric spreading — slope for first segment (e.g. -1.0 = body wave).",
+            "GS_R2": "Geometric spreading — transition distance (km) to second segment.",
+            "GS_S2": "Geometric spreading — slope for second segment (e.g. -0.5 = surface wave).",
+        }
+
+        param_rows = [
+            ("Quality Factor",        [("Qmin",  "QMIN"), ("Q0",   "Q0"),   ("eta", "ETA")]),
+            ("Crustal Properties",    [("β (km/s)", "BETA"), ("ρ (g/cm³)", "RHO")]),
+            ("Geometric Spreading",   [("R1 (km)", "GS_R1"), ("Slope 1", "GS_S1")]),
+            ("",                      [("R2 (km)", "GS_R2"), ("Slope 2", "GS_S2")]),
+        ]
+
+        for section_title, params in param_rows:
+            if section_title:
+                ctk.CTkLabel(
+                    self.adv_exsim_content,
+                    text=section_title,
+                    font=(res.FONT_LABEL[0], 11, "bold"),
+                    text_color="#ffaa44",
+                    anchor="w"
+                ).pack(anchor="w", padx=12, pady=(8, 2))
+
+            row_frame = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+            row_frame.pack(fill="x", padx=12, pady=(0, 4))
+
+            for col, (label, key) in enumerate(params):
+                col_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
+                col_frame.pack(side="left", expand=True, padx=(0, 10))
+
+                lbl = ctk.CTkLabel(
+                    col_frame, text=label,
+                    font=(res.FONT_LABEL[0], 10), anchor="w"
+                )
+                lbl.pack(anchor="w")
+                lbl.bind("<Enter>", lambda e, k=key: self.show_help(k))
+                lbl.bind("<Leave>", lambda e: self.show_help(""))
+
+                ent = ctk.CTkEntry(col_frame, height=28, width=80)
+                ent.insert(0, self._adv_exsim_defaults[key])
+                ent.pack(anchor="w")
+                self.adv_exsim_inputs[key] = ent
+
+        # Add descriptions to main descriptions dict for hover help
+        self.descriptions.update(adv_descriptions)
+
+        # Reset button
+        reset_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        reset_row.pack(fill="x", padx=12, pady=(4, 10))
+
+        ctk.CTkButton(
+            reset_row,
+            text="Reset to LABasin500 Defaults",
+            height=28, width=200,
+            fg_color="#333333",
+            text_color="#aaaaaa",
+            hover_color="#2a2a2a",
+            command=self._reset_adv_exsim
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            reset_row,
+            text="For ENA/Charlevoix: Qmin≈600, Q0≈680, eta≈0.35",
+            font=(res.FONT_LABEL[0], 9),
+            text_color="#666666"
+        ).pack(side="left", padx=(10, 0))
+
         # --- MANUAL STATION PANEL ---
         self.manual_panel = ctk.CTkFrame(
             self.left_column, fg_color="#252525", border_width=1, border_color="gold"
@@ -484,6 +605,107 @@ class ExSimPanel(ctk.CTkFrame):
             text="Manual stations cleared.", text_color="gray"
         )
 
+    # ------------------------------------------------------------------
+    # ADVANCED PATH PARAMETERS
+    # ------------------------------------------------------------------
+
+    def _toggle_adv_exsim(self):
+        """Expands or collapses the Advanced Path Parameters section."""
+        self.adv_exsim_expanded = not self.adv_exsim_expanded
+        if self.adv_exsim_expanded:
+            self.adv_exsim_content.pack(fill="x", pady=(0, 4))
+            self.btn_adv_exsim_toggle.configure(text="▼  Advanced Path Parameters")
+        else:
+            self.adv_exsim_content.pack_forget()
+            self.btn_adv_exsim_toggle.configure(text="▶  Advanced Path Parameters")
+
+    def _reset_adv_exsim(self):
+        """Resets all Advanced Path Parameters to LABasin500 defaults."""
+        for key, ent in self.adv_exsim_inputs.items():
+            ent.delete(0, "end")
+            ent.insert(0, self._adv_exsim_defaults[key])
+        self.help_label.configure(
+            text="Advanced Path Parameters reset to LABasin500 defaults.",
+            text_color="gray"
+        )
+
+    def _write_adv_exsim_to_par(self):
+        """
+        Writes the current Advanced Path Parameters into labasin_exsim.par
+        before the simulation runs. Only called from generate_files() when
+        the user has expanded and modified this section.
+
+        Uses WSLBridge.read_wsl_file / write_wsl_file to edit the .par
+        file in-place, replacing only the two target lines:
+          - Q line:                  'Qmin  Q0  eta'
+          - Beta/rho line:           'beta  rho'
+          - Geometric spreading segs: '  R1  slope1' / '  R2  slope2'
+        All other lines are preserved exactly.
+
+        Returns (ok: bool, err: str).
+        """
+        try:
+            qmin = float(self.adv_exsim_inputs["QMIN"].get())
+            q0   = float(self.adv_exsim_inputs["Q0"].get())
+            eta  = float(self.adv_exsim_inputs["ETA"].get())
+            beta = float(self.adv_exsim_inputs["BETA"].get())
+            rho  = float(self.adv_exsim_inputs["RHO"].get())
+            gs_r1 = float(self.adv_exsim_inputs["GS_R1"].get())
+            gs_s1 = float(self.adv_exsim_inputs["GS_S1"].get())
+            gs_r2 = float(self.adv_exsim_inputs["GS_R2"].get())
+            gs_s2 = float(self.adv_exsim_inputs["GS_S2"].get())
+        except ValueError as e:
+            return False, f"Invalid Advanced Path Parameter value: {e}"
+
+        home     = WSLBridge.get_wsl_home()
+        par_path = f"{home}/bbp_gf/LABasin500/uwo/labasin_exsim.par"
+        ok, content = WSLBridge.read_wsl_file(par_path)
+        if not ok or not content:
+            return False, f"Could not read labasin_exsim.par: {par_path}"
+
+        import re
+        lines = content.splitlines()
+        new_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Q factor line: three numbers matching Qmin Q0 eta pattern
+            # Identified by the comment line immediately before it
+            if re.match(r'^\s*\d+\.?\d*\s+\d+\.?\d*\s+\d*\.?\d+\s*$', stripped) \
+                    and i > 0 and "Quality factor" in lines[i-1]:
+                new_lines.append(f"  {int(qmin)}  {q0}  {eta}")
+                i += 1
+                continue
+
+            # Beta/rho line: two numbers, preceded by comment about beta/rho
+            if re.match(r'^\s*\d+\.?\d*\s+\d+\.?\d*\s*$', stripped) \
+                    and i > 0 and ("beta" in lines[i-1].lower() or "rho" in lines[i-1].lower()):
+                new_lines.append(f"  {beta}  {rho}")
+                i += 1
+                continue
+
+            # Geometric spreading segment 1: '  R1  slope1'
+            # Identified by the '2' (nseg count) line just before this
+            if re.match(r'^\s*\d+\.?\d*\s+-?\d+\.?\d*\s*$', stripped) \
+                    and i > 0 and lines[i-1].strip() == "2":
+                new_lines.append(f"      {gs_r1} {gs_s1}")
+                # Also write segment 2 on the very next line
+                new_lines.append(f"     {gs_r2} {gs_s2}")
+                i += 2  # skip the original segment 2 line
+                continue
+
+            new_lines.append(line)
+            i += 1
+
+        new_content = "\n".join(new_lines) + "\n"
+        ok_w, err = WSLBridge.write_wsl_file(par_path, new_content)
+        if not ok_w:
+            return False, f"Could not write labasin_exsim.par: {err}"
+
+        return True, ""
+
     def toggle_real_stations(self):
         """Toggles the real station reference layer on the map."""
         is_visible = self.station_module.toggle_real_stations()
@@ -636,6 +858,27 @@ class ExSimPanel(ctk.CTkFrame):
         AppConfig.current_base_name = base
         AppConfig.simulation_profile = "full"
         AppConfig.simulation_method  = "EXSIM"
+
+        # Write Advanced Path Parameters to .par file if the user
+        # has expanded and modified that section.
+        if self.adv_exsim_expanded:
+            ok_par, err_par = self._write_adv_exsim_to_par()
+            if not ok_par:
+                self.help_label.configure(
+                    text=f"Warning: could not update labasin_exsim.par — {err_par}",
+                    text_color="#ffaa44"
+                )
+            else:
+                self.help_label.configure(
+                    text="Advanced path parameters written to labasin_exsim.par.",
+                    text_color="#ffaa44"
+                )
+                self.after(2000, lambda: self.help_label.configure(
+                    text=f"SUCCESS — Files saved for experiment: {base}",
+                    text_color=res.COLOR_SUCCESS
+                ))
+                self.btn_run.configure(state="normal")
+                return
 
         self.btn_run.configure(state="normal")
         self.help_label.configure(
