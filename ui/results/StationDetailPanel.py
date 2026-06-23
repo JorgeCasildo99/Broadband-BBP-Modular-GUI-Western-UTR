@@ -10,6 +10,7 @@ import customtkinter as ctk
 import os
 import sys
 import io
+import numpy as np
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
@@ -131,9 +132,9 @@ class StationDetailPanel(ctk.CTkToplevel):
         # Hfsims split (it's a single-stage stochastic method), so
         # there is no intermediate LF/HF data to show.
         if self.is_exsim:
-            tab_names = ["Velocity", "Acceleration", "RotD50/100", "FAS", "Raw Data"]
+            tab_names = ["Velocity", "Acceleration", "RotD50/100", "FAS", "FAS & HVSR", "Raw Data"]
         else:
-            tab_names = ["Velocity", "Acceleration", "LF & HF", "RotD50/100", "FAS", "Raw Data"]
+            tab_names = ["Velocity", "Acceleration", "LF & HF", "RotD50/100", "FAS", "FAS & HVSR", "Raw Data"]
 
         # Detect if this is a GMPE event
         self._is_gmpe = self.is_validation and WSLBridge.wsl_path_exists(
@@ -174,6 +175,7 @@ class StationDetailPanel(ctk.CTkToplevel):
 
         self._build_rotd_combined_tab()
         self._build_fas_tab()
+        self._build_hvsr_tab()
 
         if self.is_validation and not self._is_gmpe:
             self._build_fas_comparison_tab()
@@ -777,6 +779,272 @@ class StationDetailPanel(ctk.CTkToplevel):
                 f"{label} not found.",
                 master=self
             )
+
+    # ------------------------------------------------------------------
+    # FAS & HVSR TAB
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ko98_fast(freqs, data, bexp, n_out=300, f_min=0.1, f_max=20.0):
+        """
+        Fast Konno-Ohmachi smoothing using numpy broadcasting.
+        Evaluates only at n_out log-spaced output frequencies (not all
+        FFT bins), keeping memory at ~9MB instead of ~128MB.
+        Formula: W(f,fc) = [sin(b·log10(f/fc)) / (b·log10(f/fc))]^4
+        """
+        freqs = np.asarray(freqs, dtype=float)
+        data  = np.asarray(data,  dtype=float)
+        f_out = np.logspace(np.log10(f_min), np.log10(f_max), n_out)
+
+        log_ratio = np.log10(
+            freqs[np.newaxis, :] / f_out[:, np.newaxis]
+        )
+        bx = bexp * log_ratio
+        with np.errstate(invalid="ignore", divide="ignore"):
+            sinc = np.where(
+                bx == 0, 1.0,
+                np.sin(bx) / np.where(bx == 0, 1.0, bx)
+            )
+        win    = np.where(np.isfinite(sinc), sinc ** 4, 0.0)
+        w_sum  = win.sum(axis=1)
+        w_data = (win * data[np.newaxis, :]).sum(axis=1)
+        result = np.where(w_sum > 0, w_data / w_sum, 0.0)
+        return f_out, result
+
+    def _build_hvsr_tab(self):
+        """
+        FAS & HVSR tab — shows an info card and a "Compute" button.
+        Computation only starts when the user explicitly clicks the button,
+        since KO smoothing takes a few seconds. A progress bar runs while
+        the background thread works, then the plot replaces it.
+        """
+        import threading
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_tkagg import (
+            FigureCanvasTkAgg, NavigationToolbar2Tk
+        )
+
+        tab    = self.tabs.tab("FAS & HVSR")
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # --- INFO CARD ---
+        info = ctk.CTkFrame(
+            scroll, fg_color="#0d1a0d", corner_radius=6,
+            border_width=1, border_color="#1a3a1a"
+        )
+        info.pack(fill="x", pady=(0, 12))
+
+        ctk.CTkLabel(
+            info,
+            text="FAS & HVSR — Three-Component Spectral Analysis",
+            font=(res.FONT_LABEL[0], 13, "bold"),
+            text_color="#88dd88"
+        ).pack(anchor="w", padx=14, pady=(10, 4))
+
+        ctk.CTkLabel(
+            info,
+            text=(
+                "Computes the Fourier Amplitude Spectrum for all three components "
+                "(NS, EW, vertical U/D) from the station's velocity time series, "
+                "smoothed with Konno-Ohmachi b=40 (Dr. Molnar's processing pipeline).\n\n"
+                "HVSR = √(NS × EW) / Z   —   Horizontal-to-Vertical Spectral Ratio.\n"
+                "Peaks in the HVSR curve indicate the natural resonance frequency of the site.\n\n"
+                "Note: computation takes a few seconds — click the button below to start."
+            ),
+            font=(res.FONT_LABEL[0], 11),
+            text_color="#aaaaaa",
+            wraplength=820, justify="left"
+        ).pack(anchor="w", padx=14, pady=(0, 12))
+
+        # --- COMPUTE BUTTON + PROGRESS AREA ---
+        action_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        action_frame.pack(fill="x", pady=(0, 10))
+
+        btn_compute = ctk.CTkButton(
+            action_frame,
+            text="▶  Compute FAS & HVSR",
+            height=44, width=240,
+            fg_color="#0d2a0d",
+            hover_color="#1a3a1a",
+            border_width=1,
+            border_color="#88dd88",
+            text_color="#88dd88",
+            font=(res.FONT_LABEL[0], 13, "bold"),
+        )
+        btn_compute.pack(pady=(0, 8))
+
+        lbl_status = ctk.CTkLabel(
+            action_frame,
+            text="",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="gray"
+        )
+        lbl_status.pack()
+
+        progress = ctk.CTkProgressBar(
+            action_frame,
+            width=400, height=14,
+            progress_color="#88dd88",
+            fg_color="#1a1a1a"
+        )
+        progress.set(0)
+
+        plot_frame = ctk.CTkFrame(scroll, fg_color="#111111", corner_radius=6)
+        vel_path   = f"{self.outdata}/{self.run_id}.{self.sid}.vel.bbp"
+
+        def _compute():
+            """Background thread — no Tkinter calls here."""
+            ok, content = WSLBridge.read_wsl_file(vel_path)
+            if not ok or not content:
+                return None, f"Could not read:\n{vel_path}"
+
+            times_l, ns_l, ew_l, ud_l = [], [], [], []
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) < 4:
+                    continue
+                try:
+                    times_l.append(float(parts[0]))
+                    ns_l.append(float(parts[1]))
+                    ew_l.append(float(parts[2]))
+                    ud_l.append(float(parts[3]))
+                except ValueError:
+                    continue
+
+            if len(times_l) < 10:
+                return None, "Insufficient data in velocity file."
+
+            ns = np.array(ns_l)
+            ew = np.array(ew_l)
+            ud = np.array(ud_l)
+            dt = times_l[1] - times_l[0]
+            n  = len(ns)
+
+            freqs  = np.fft.rfftfreq(n, d=dt)
+            fas_ns = np.abs(np.fft.rfft(ns)) * dt
+            fas_ew = np.abs(np.fft.rfft(ew)) * dt
+            fas_ud = np.abs(np.fft.rfft(ud)) * dt
+
+            mask   = freqs > 0
+            freqs  = freqs[mask]
+            fas_ns = fas_ns[mask]
+            fas_ew = fas_ew[mask]
+            fas_ud = fas_ud[mask]
+
+            # Update progress: 3 KO calls, report after each
+            B = 40.0
+            if self.winfo_exists():
+                self.after(0, lambda: progress.set(0.1))
+
+            f_out, sm_ns = StationDetailPanel._ko98_fast(freqs, fas_ns, B)
+            if self.winfo_exists():
+                self.after(0, lambda: progress.set(0.45))
+
+            _, sm_ew = StationDetailPanel._ko98_fast(freqs, fas_ew, B)
+            if self.winfo_exists():
+                self.after(0, lambda: progress.set(0.75))
+
+            _, sm_ud = StationDetailPanel._ko98_fast(freqs, fas_ud, B)
+            if self.winfo_exists():
+                self.after(0, lambda: progress.set(0.95))
+
+            sm_ud_safe = np.where(sm_ud > 0, sm_ud, np.finfo(float).tiny)
+            hvsr       = np.sqrt(sm_ns * sm_ew) / sm_ud_safe
+
+            return (f_out, sm_ns, sm_ew, sm_ud, hvsr), None
+
+        def _render(result, error):
+            """Called on main thread once computation finishes."""
+            if not self.winfo_exists():
+                return
+            progress.pack_forget()
+            lbl_status.configure(text="")
+
+            if error:
+                lbl_status.configure(text=error, text_color=res.COLOR_ERROR)
+                btn_compute.configure(state="normal",
+                                      text="▶  Compute FAS & HVSR")
+                return
+
+            progress.set(1.0)
+            f_out, sm_ns, sm_ew, sm_ud, hvsr = result
+            f_min, f_max = 0.1, 20.0
+
+            fig, (ax1, ax2) = plt.subplots(
+                2, 1, figsize=(10, 8), facecolor="#111111",
+                gridspec_kw={"height_ratios": [1.6, 1], "hspace": 0.45}
+            )
+
+            for ax in (ax1, ax2):
+                ax.set_facecolor("#111111")
+                ax.tick_params(colors="white")
+                ax.xaxis.label.set_color("white")
+                ax.yaxis.label.set_color("white")
+                ax.title.set_color("white")
+                for spine in ax.spines.values():
+                    spine.set_edgecolor("#444444")
+                ax.grid(True, color="#333333", linewidth=0.5, which="both")
+                ax.set_xscale("log")
+                ax.set_xlim(f_min, f_max)
+
+            ax1.semilogy(f_out, sm_ns, color="#4488ff",
+                         linewidth=1.5, label="NS")
+            ax1.semilogy(f_out, sm_ew, color="#ff8844",
+                         linewidth=1.5, label="EW")
+            ax1.semilogy(f_out, sm_ud, color="#88dd88",
+                         linewidth=1.5, linestyle="--", label="U/D (vertical)")
+            ax1.set_xlabel("Frequency (Hz)", fontsize=10)
+            ax1.set_ylabel("Fourier Amplitude (cm/s·s)", fontsize=10)
+            ax1.set_title(
+                f"Smoothed FAS — {self.sid}   (Konno-Ohmachi b=40)",
+                fontsize=11, color="white"
+            )
+            ax1.legend(facecolor="#1a1a1a", edgecolor="#444444",
+                       labelcolor="white", fontsize=9)
+
+            ax2.plot(f_out, hvsr, color="#ffdd44", linewidth=2, label="HVSR")
+            ax2.axhline(y=1.0, color="#666666", linewidth=1, linestyle="--")
+            ax2.set_xlabel("Frequency (Hz)", fontsize=10)
+            ax2.set_ylabel("H/V Ratio", fontsize=10)
+            ax2.set_title(
+                f"HVSR = √(NS × EW) / Z — {self.sid}",
+                fontsize=11, color="white"
+            )
+            ax2.legend(facecolor="#1a1a1a", edgecolor="#444444",
+                       labelcolor="white", fontsize=9)
+
+            plot_frame.pack(fill="both", expand=True, pady=(8, 4))
+            cw = FigureCanvasTkAgg(fig, master=plot_frame)
+            cw.draw()
+            cw.get_tk_widget().pack(fill="both", expand=True)
+            toolbar = NavigationToolbar2Tk(cw, plot_frame, pack_toolbar=False)
+            toolbar.config(background="#111111")
+            toolbar.update()
+            toolbar.pack(side="bottom", fill="x")
+            plt.close(fig)
+
+        def _on_compute():
+            """Button click handler — disables button, shows progress, starts thread."""
+            btn_compute.configure(state="disabled", text="Computing...")
+            lbl_status.configure(
+                text="Running Konno-Ohmachi smoothing on 3 components...",
+                text_color="gray"
+            )
+            progress.set(0)
+            progress.pack(pady=(6, 0))
+
+            def _run():
+                result, error = _compute()
+                if self.winfo_exists():
+                    self.after(0, lambda: _render(result, error))
+
+            threading.Thread(target=_run, daemon=True).start()
+
+        btn_compute.configure(command=_on_compute)
 
     # ------------------------------------------------------------------
     # LF & HF TAB
