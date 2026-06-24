@@ -847,7 +847,7 @@ class StationDetailPanel(ctk.CTkToplevel):
             text=(
                 "Computes the Fourier Amplitude Spectrum for all three components "
                 "(NS, EW, vertical U/D) from the station's velocity time series, "
-                "smoothed with Konno-Ohmachi b=40 (Dr. Molnar's processing pipeline).\n\n"
+                "smoothed with Konno-Ohmachi b=40.\n\n"
                 "HVSR = √(NS × EW) / Z   —   Horizontal-to-Vertical Spectral Ratio.\n"
                 "Peaks in the HVSR curve indicate the natural resonance frequency of the site.\n\n"
                 "Note: computation takes a few seconds — click the button below to start."
