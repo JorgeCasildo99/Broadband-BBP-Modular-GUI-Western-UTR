@@ -317,7 +317,7 @@ class StationPanel(ctk.CTkFrame):
         }
         try:
             n = int(self._station_count_var.get())
-            n = max(1, min(500, n))
+            n = max(0, min(500, n))
             self._station_count_var.set(str(n))
             return n
         except (ValueError, AttributeError):

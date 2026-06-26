@@ -249,15 +249,22 @@ class ExSimPanel(ctk.CTkFrame):
         self.adv_exsim_inputs = {}
 
         adv_descriptions = {
-            "QMIN" : "Minimum quality factor — lower Q = more attenuation. ENA typical: 600+.",
-            "Q0"   : "Q scale factor — Q = max(Qmin, Q0 × F^eta). ENA typical: 600–900.",
-            "ETA"  : "Q frequency exponent — controls how Q grows with frequency.",
-            "BETA" : "Reference shear wave velocity (km/s) at the source depth.",
-            "RHO"  : "Crustal density (g/cm³) at the source depth.",
-            "GS_R1": "Geometric spreading — distance (km) for first segment start.",
-            "GS_S1": "Geometric spreading — slope for first segment (e.g. -1.0 = body wave).",
-            "GS_R2": "Geometric spreading — transition distance (km) to second segment.",
-            "GS_S2": "Geometric spreading — slope for second segment (e.g. -0.5 = surface wave).",
+            "QMIN"        : "Minimum quality factor — lower Q = more attenuation. ENA typical: 600+.",
+            "Q0"          : "Q scale factor — Q = max(Qmin, Q0 × F^eta). ENA typical: 600–900.",
+            "ETA"         : "Q frequency exponent — controls how Q grows with frequency.",
+            "BETA"        : "Reference shear wave velocity (km/s) at the source depth.",
+            "RHO"         : "Crustal density (g/cm³) at the source depth.",
+            "GS_R1"       : "Geometric spreading — distance (km) for first segment start.",
+            "GS_S1"       : "Geometric spreading — slope for first segment (e.g. -1.0 = body wave).",
+            "GS_R2"       : "Geometric spreading — transition distance (km) to second segment.",
+            "GS_S2"       : "Geometric spreading — slope for second segment (e.g. -0.5 = surface wave).",
+            "ISLIPWEIGHT" : (
+                "Controls how slip is distributed across the fault subfaults. "
+                "Uniform: same slip everywhere. "
+                "Random: ExSIM generates a random slip pattern (controlled by SEED). "
+                "From file: load a specific slip distribution from a text file."
+            ),
+            "SLIP_FILE"   : "Path to the slip weights text file (required when islipweight = 0).",
         }
 
         param_rows = [
@@ -302,7 +309,7 @@ class ExSimPanel(ctk.CTkFrame):
 
         # Reset button
         reset_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
-        reset_row.pack(fill="x", padx=12, pady=(4, 10))
+        reset_row.pack(fill="x", padx=12, pady=(4, 4))
 
         ctk.CTkButton(
             reset_row,
@@ -320,6 +327,128 @@ class ExSimPanel(ctk.CTkFrame):
             font=(res.FONT_LABEL[0], 9),
             text_color="#666666"
         ).pack(side="left", padx=(10, 0))
+
+        # --- ISLIPWEIGHT ---
+        ctk.CTkLabel(
+            self.adv_exsim_content,
+            text="Slip Weighting (islipweight)",
+            font=(res.FONT_LABEL[0], 11, "bold"),
+            text_color="#ffaa44",
+            anchor="w"
+        ).pack(anchor="w", padx=12, pady=(10, 2))
+
+        slip_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        slip_row.pack(fill="x", padx=12, pady=(0, 2))
+
+        lbl_slip = ctk.CTkLabel(
+            slip_row, text="Mode",
+            font=(res.FONT_LABEL[0], 10), anchor="w"
+        )
+        lbl_slip.pack(side="left", padx=(0, 8))
+        lbl_slip.bind("<Enter>", lambda e: self.show_help("ISLIPWEIGHT"))
+        lbl_slip.bind("<Leave>", lambda e: self.show_help(""))
+
+        self.islipweight_var = ctk.StringVar(value="Random (1)")
+        self.slip_mode_menu = ctk.CTkOptionMenu(
+            slip_row,
+            values=["Uniform (-1)", "From file (0)", "Random (1)"],
+            variable=self.islipweight_var,
+            width=160,
+            height=28,
+            fg_color="#333333",
+            button_color="#444444",
+            command=self._on_islipweight_change
+        )
+        self.slip_mode_menu.pack(side="left")
+
+        # File picker row — only shown when "From file (0)" is selected
+        self.slip_file_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        # Not packed yet — revealed by _on_islipweight_change
+
+        lbl_sf = ctk.CTkLabel(
+            self.slip_file_row, text="Slip file",
+            font=(res.FONT_LABEL[0], 10), anchor="w"
+        )
+        lbl_sf.pack(side="left", padx=(0, 6))
+        lbl_sf.bind("<Enter>", lambda e: self.show_help("SLIP_FILE"))
+        lbl_sf.bind("<Leave>", lambda e: self.show_help(""))
+
+        self.ent_slip_file = ctk.CTkEntry(
+            self.slip_file_row, height=28, width=220,
+            placeholder_text="/path/to/slip_weights.txt"
+        )
+        self.ent_slip_file.pack(side="left", padx=(0, 6))
+
+        ctk.CTkButton(
+            self.slip_file_row,
+            text="Browse…",
+            height=28, width=70,
+            fg_color="#333333",
+            text_color="white",
+            hover_color="#444444",
+            command=self._browse_slip_file
+        ).pack(side="left")
+
+        # Info card explaining the three slip modes
+        slip_info_frame = ctk.CTkFrame(
+            self.adv_exsim_content,
+            fg_color="#1a2a1a",
+            border_width=1,
+            border_color="#2a4a2a",
+            corner_radius=6
+        )
+        slip_info_frame.pack(fill="x", padx=12, pady=(4, 10))
+
+        ctk.CTkLabel(
+            slip_info_frame,
+            text="What does each option do?",
+            font=(res.FONT_LABEL[0], 10, "bold"),
+            text_color="#88cc88",
+            anchor="w"
+        ).pack(anchor="w", padx=10, pady=(8, 2))
+
+        slip_info_lines = [
+            ("Uniform (-1)",  "Every subfault receives the same slip amount. "
+                              "Simplest option — use when you want a smooth, "
+                              "homogeneous rupture with no spatial variation."),
+            ("Random (1)",    "ExSIM generates a random slip distribution across "
+                              "the fault using its internal algorithm. The SEED value "
+                              "above controls which random pattern is produced — "
+                              "same SEED always gives the same result. "
+                              "Recommended default for most simulations."),
+            ("From file (0)", "ExSIM reads slip values from a text file you provide. "
+                              "Each value represents the slip on one subfault. "
+                              "Use this when you have a specific rupture model "
+                              "from an external source and want ExSIM to reproduce "
+                              "that exact slip pattern."),
+        ]
+
+        for mode, explanation in slip_info_lines:
+            row = ctk.CTkFrame(slip_info_frame, fg_color="transparent")
+            row.pack(fill="x", padx=10, pady=(2, 4))
+
+            ctk.CTkLabel(
+                row,
+                text=f"• {mode}:",
+                font=(res.FONT_LABEL[0], 9, "bold"),
+                text_color="#aaaaaa",
+                anchor="w",
+                width=110
+            ).pack(side="left", anchor="n")
+
+            ctk.CTkLabel(
+                row,
+                text=explanation,
+                font=(res.FONT_LABEL[0], 9),
+                text_color="#777777",
+                wraplength=210,
+                justify="left",
+                anchor="w"
+            ).pack(side="left", anchor="n", pady=(0, 2))
+
+        ctk.CTkFrame(
+            slip_info_frame, fg_color="transparent", height=4
+        ).pack()
 
         # --- MANUAL STATION PANEL ---
         self.manual_panel = ctk.CTkFrame(
@@ -361,6 +490,16 @@ class ExSimPanel(ctk.CTkFrame):
             text_color="white",
             command=self.clear_manual_stations
         ).pack(side="left", padx=5)
+
+        # --- STATION LIST — hidden until first station is added ---
+        self.station_list_frame = ctk.CTkFrame(
+            self.manual_panel,
+            fg_color="#1a1a1a",
+            corner_radius=6,
+            border_width=1,
+            border_color="#333333"
+        )
+        # Not packed yet — revealed by _refresh_station_list when list is non-empty
 
         # --- SECONDARY BUTTONS (above Generate/Run) ---
         self.btn_f2 = ctk.CTkFrame(self.left_column, fg_color="transparent")
@@ -571,6 +710,7 @@ class ExSimPanel(ctk.CTkFrame):
             name = self.ent_man_name.get().strip() or f"M{len(self.manual_station_list)}"
 
             self.manual_station_list.append((lon, lat, name))
+            self._refresh_station_list()
             self.trigger_map_update()
 
             if StationPanel.is_inside_basin(lon, lat):
@@ -600,10 +740,138 @@ class ExSimPanel(ctk.CTkFrame):
     def clear_manual_stations(self):
         """Removes all manually added stations and refreshes the map."""
         self.manual_station_list.clear()
+        self._refresh_station_list()
         self.trigger_map_update()
         self.help_label.configure(
             text="Manual stations cleared.", text_color="gray"
         )
+
+    def _refresh_station_list(self):
+        """
+        Rebuilds the station list UI from manual_station_list.
+        The list frame is hidden when empty and grows dynamically
+        with each station added. Called after every add, delete, or edit.
+        """
+        for widget in self.station_list_frame.winfo_children():
+            widget.destroy()
+
+        if not self.manual_station_list:
+            # Hide the frame entirely when no stations
+            self.station_list_frame.pack_forget()
+            return
+
+        # Show the frame — it will grow naturally with content
+        self.station_list_frame.pack(fill="x", padx=10, pady=(4, 8))
+
+        for idx, (lon, lat, name) in enumerate(self.manual_station_list):
+            row = ctk.CTkFrame(
+                self.station_list_frame,
+                fg_color="#2a2a2a",
+                corner_radius=4
+            )
+            row.pack(fill="x", pady=(4, 0), padx=6)
+
+            # Index badge
+            ctk.CTkLabel(
+                row,
+                text=f"{idx + 1}",
+                font=(res.FONT_LABEL[0], 11, "bold"),
+                text_color="#666666",
+                width=22,
+                anchor="e"
+            ).pack(side="left", padx=(8, 4), pady=6)
+
+            # Station name
+            ctk.CTkLabel(
+                row,
+                text=f"{name}",
+                font=(res.FONT_LABEL[0], 12, "bold"),
+                text_color="gold",
+                anchor="w",
+                width=65
+            ).pack(side="left", padx=(0, 6))
+
+            # Coordinates
+            ctk.CTkLabel(
+                row,
+                text=f"lat {lat:.5f}   lon {lon:.5f}",
+                font=(res.FONT_LABEL[0], 12),
+                text_color="#cccccc",
+                anchor="w"
+            ).pack(side="left", padx=(0, 6), fill="x", expand=True)
+
+            # Edit button
+            ctk.CTkButton(
+                row,
+                text="Edit",
+                width=48,
+                height=26,
+                font=(res.FONT_LABEL[0], 11),
+                fg_color="#1a3a5c",
+                hover_color="#1e4a7a",
+                text_color="#5ab4ff",
+                border_width=1,
+                border_color="#2a5a8c",
+                corner_radius=4,
+                command=lambda i=idx: self._edit_station(i)
+            ).pack(side="right", padx=(2, 6), pady=6)
+
+            # Delete button
+            ctk.CTkButton(
+                row,
+                text="✕",
+                width=30,
+                height=26,
+                font=(res.FONT_LABEL[0], 11),
+                fg_color="#3a1a1a",
+                hover_color="#5a2a2a",
+                text_color="#ff6666",
+                border_width=1,
+                border_color="#6a2a2a",
+                corner_radius=4,
+                command=lambda i=idx: self._delete_station(i)
+            ).pack(side="right", padx=(6, 2), pady=6)
+
+        # Bottom padding inside the frame
+        ctk.CTkFrame(
+            self.station_list_frame, fg_color="transparent", height=4
+        ).pack()
+
+    def _delete_station(self, idx):
+        """Removes the station at the given index and refreshes the list and map."""
+        if 0 <= idx < len(self.manual_station_list):
+            name = self.manual_station_list[idx][2]
+            self.manual_station_list.pop(idx)
+            self._refresh_station_list()
+            self.trigger_map_update()
+            self.help_label.configure(
+                text=f"Station {name} removed.",
+                text_color="gray"
+            )
+
+    def _edit_station(self, idx):
+        """
+        Populates the entry fields with the selected station's values
+        and removes it from the list, ready for the user to modify and re-add.
+        """
+        if 0 <= idx < len(self.manual_station_list):
+            lon, lat, name = self.manual_station_list[idx]
+            self.manual_station_list.pop(idx)
+            self._refresh_station_list()
+            self.trigger_map_update()
+
+            # Populate entry fields
+            self.ent_man_lon.delete(0, "end")
+            self.ent_man_lon.insert(0, str(lon))
+            self.ent_man_lat.delete(0, "end")
+            self.ent_man_lat.insert(0, str(lat))
+            self.ent_man_name.delete(0, "end")
+            self.ent_man_name.insert(0, name)
+
+            self.help_label.configure(
+                text=f"Editing station {name} — modify the fields above and click + ADD to save.",
+                text_color="#5ab4ff"
+            )
 
     # ------------------------------------------------------------------
     # ADVANCED PATH PARAMETERS
@@ -624,10 +892,31 @@ class ExSimPanel(ctk.CTkFrame):
         for key, ent in self.adv_exsim_inputs.items():
             ent.delete(0, "end")
             ent.insert(0, self._adv_exsim_defaults[key])
+        self.islipweight_var.set("Random (1)")
+        self._on_islipweight_change("Random (1)")
+        self.ent_slip_file.delete(0, "end")
         self.help_label.configure(
             text="Advanced Path Parameters reset to LABasin500 defaults.",
             text_color="gray"
         )
+
+    def _on_islipweight_change(self, choice):
+        """Shows or hides the slip file picker based on islipweight selection."""
+        if choice == "From file (0)":
+            self.slip_file_row.pack(fill="x", padx=12, pady=(2, 4))
+        else:
+            self.slip_file_row.pack_forget()
+
+    def _browse_slip_file(self):
+        """Opens a file dialog to select the slip weights text file."""
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="Select Slip Weights File",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if path:
+            self.ent_slip_file.delete(0, "end")
+            self.ent_slip_file.insert(0, path)
 
     def _write_adv_exsim_to_par(self):
         """
@@ -656,6 +945,14 @@ class ExSimPanel(ctk.CTkFrame):
             gs_s2 = float(self.adv_exsim_inputs["GS_S2"].get())
         except ValueError as e:
             return False, f"Invalid Advanced Path Parameter value: {e}"
+
+        # islipweight: map dropdown string to integer
+        slip_mode_str = self.islipweight_var.get()
+        slip_mode_map = {"Uniform (-1)": -1, "From file (0)": 0, "Random (1)": 1}
+        islipweight = slip_mode_map.get(slip_mode_str, 1)
+
+        # Slip file path — used only when islipweight=0
+        slip_file_path = self.ent_slip_file.get().strip() if islipweight == 0 else "none"
 
         home     = WSLBridge.get_wsl_home()
         par_path = f"{home}/bbp_gf/LABasin500/uwo/labasin_exsim.par"
@@ -687,14 +984,33 @@ class ExSimPanel(ctk.CTkFrame):
                 continue
 
             # Geometric spreading segment 1: '  R1  slope1'
-            # Identified by the '2' (nseg count) line just before this
+            # Identified by the '2' (nseg count) line just before this,
+            # AND a comment containing "r_ref" or "nseg" two lines before —
+            # this distinguishes GS from the path duration section which
+            # also has a '2' followed by two-number pairs but different comments.
             if re.match(r'^\s*\d+\.?\d*\s+-?\d+\.?\d*\s*$', stripped) \
-                    and i > 0 and lines[i-1].strip() == "2":
+                    and i > 0 and lines[i-1].strip() == "2" \
+                    and i > 1 and ("r_ref" in lines[i-2].lower() or "nseg" in lines[i-2].lower()):
                 new_lines.append(f"      {gs_r1} {gs_s1}")
                 # Also write segment 2 on the very next line
                 new_lines.append(f"     {gs_r2} {gs_s2}")
                 i += 2  # skip the original segment 2 line
                 continue
+
+            # islipweight value line: single integer (-1, 0, or 1),
+            # preceded by a comment containing "random weights"
+            if re.match(r'^\s*-?[01]\s*$', stripped) \
+                    and i > 0 and "random weights" in lines[i-1].lower():
+                new_lines.append(f"   {islipweight}")
+                i += 1
+                continue
+
+            # NOTE: We deliberately do NOT touch the <SLIP_WEIGHTS_FILE>
+            # placeholder line. BBP's exsim.py substitutes this itself
+            # via template_replace(). If we write "none" here we destroy
+            # the placeholder and BBP's sequential scanner reads past
+            # <NUM_STATIONS> looking for <SLIP_WEIGHTS_FILE>, leaving
+            # <NUM_STATIONS> unsubstituted — causing exsim14 exit code 2.
 
             new_lines.append(line)
             i += 1
@@ -771,6 +1087,26 @@ class ExSimPanel(ctk.CTkFrame):
             int(self.ent_seed.get())
         except ValueError:
             return False, "SEED: must be an integer."
+
+        # islipweight=0 requires a slip file path
+        if self.islipweight_var.get() == "From file (0)":
+            slip_path = self.ent_slip_file.get().strip()
+            if not slip_path:
+                return False, "Slip Weighting is set to 'From file (0)' but no slip file path was provided."
+
+        # HYPO_ALONG_STK must be strictly within fault length
+        # (ExSIM crashes if hypocenter is at or beyond the fault edge)
+        try:
+            hypo_stk = float(self.src_inputs["HYPO_ALONG_STK"].get())
+            fault_len = float(self.src_inputs["FAULT_LENGTH"].get())
+            if hypo_stk >= fault_len:
+                return False, (
+                    f"Hypo. Along Strike ({hypo_stk} km) must be less than "
+                    f"Fault Length ({fault_len} km). ExSIM requires the hypocenter "
+                    f"to be strictly inside the fault plane."
+                )
+        except ValueError:
+            pass
 
         return True, ""
 
@@ -859,8 +1195,31 @@ class ExSimPanel(ctk.CTkFrame):
         AppConfig.simulation_profile = "full"
         AppConfig.simulation_method  = "EXSIM"
 
-        # Write Advanced Path Parameters to .par file if the user
-        # has expanded and modified that section.
+        # --- SLIP FILE COPY (islipweight=0 only) ---
+        # When the user selects "From file (0)", their slip weights file
+        # must be copied to ~/bbp_gf/LABasin500/uwo/slip_weights.txt
+        # BEFORE the simulation runs. BBP's exsim.py substitutes
+        # <SLIP_WEIGHTS_FILE> with os.path.basename(self.slip_weights)
+        # which resolves to "slip_weights.txt" in that folder.
+        # This copy is independent of whether Advanced Path Parameters
+        # is expanded — it applies whenever islipweight=0 is selected.
+        slip_mode_str = self.islipweight_var.get() if hasattr(self, "islipweight_var") else "Random (1)"
+        if slip_mode_str == "From file (0)":
+            user_slip_path = self.ent_slip_file.get().strip()
+            if user_slip_path:
+                home = WSLBridge.get_wsl_home()
+                dest_path = f"{home}/bbp_gf/LABasin500/uwo/slip_weights.txt"
+                ok_cp = WSLBridge.run_command(
+                    f"cp '{user_slip_path}' '{dest_path}'"
+                )
+                if ok_cp.returncode != 0:
+                    self.help_label.configure(
+                        text=f"Could not copy slip file to BBP: {ok_cp.stderr.strip()}",
+                        text_color=res.COLOR_ERROR
+                    )
+                    return
+
+        # --- WRITE ADVANCED PATH PARAMETERS TO .par ---
         if self.adv_exsim_expanded:
             ok_par, err_par = self._write_adv_exsim_to_par()
             if not ok_par:
@@ -868,17 +1227,6 @@ class ExSimPanel(ctk.CTkFrame):
                     text=f"Warning: could not update labasin_exsim.par — {err_par}",
                     text_color="#ffaa44"
                 )
-            else:
-                self.help_label.configure(
-                    text="Advanced path parameters written to labasin_exsim.par.",
-                    text_color="#ffaa44"
-                )
-                self.after(2000, lambda: self.help_label.configure(
-                    text=f"SUCCESS — Files saved for experiment: {base}",
-                    text_color=res.COLOR_SUCCESS
-                ))
-                self.btn_run.configure(state="normal")
-                return
 
         self.btn_run.configure(state="normal")
         self.help_label.configure(
