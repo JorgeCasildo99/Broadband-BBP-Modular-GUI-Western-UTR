@@ -176,13 +176,10 @@ class ResultsPanel(ctk.CTkToplevel):
         Fallback: the 'Simulation Method' field in index-<run_id>.html,
         used for runs made before this .src marker existed.
 
-        Validation runs always use BBP's pre-packaged .src files (which
-        never carry this marker) and are always GP, so they fall straight
-        through to "GP" via the validation check rather than guessing.
+        Note: validation runs no longer automatically return "GP" —
+        ExSIM validation runs are now possible and must be detected
+        correctly so the right tabs and content are shown.
         """
-        if self._detect_validation():
-            return "GP"
-
         if self._src_file:
             ok, src_content = WSLBridge.read_wsl_file(self._src_file)
             if ok and src_content:
@@ -192,8 +189,17 @@ class ResultsPanel(ctk.CTkToplevel):
                     if method in ("GP", "EXSIM"):
                         return method
 
-        # Fallback for older runs predating the .src marker
-        return WSLBridge.detect_simulation_method(self._run_id, self._outdata)
+        # Fallback: read from BBP's HTML report
+        detected = WSLBridge.detect_simulation_method(self._run_id, self._outdata)
+        if detected in ("GP", "EXSIM"):
+            return detected
+
+        # Final fallback: if this is a validation run and method is still
+        # unknown, default to GP (BBP's built-in validation events use GP)
+        if self._detect_validation():
+            return "GP"
+
+        return "UNKNOWN"
 
     def _detect_validation(self):
         """
@@ -430,10 +436,11 @@ class ResultsPanel(ctk.CTkToplevel):
 
         if self._is_exsim:
             # ExSIM has no kinematic rupture model — no .srf file exists,
-            # so Source & Stations (slip info), Rupture Map, and Slip
-            # Distribution are not applicable and are omitted entirely
-            # rather than shown as "not available" placeholders.
-            tab_names = ["Simulation Info", "Station Map"]
+            # so Rupture Map and Slip Distribution are not applicable.
+            # Source & Stations IS included — ExSIM generates a .src and
+            # .stl file just like GP, so the fault parameters and station
+            # list are always available to review.
+            tab_names = ["Simulation Info", "Source & Stations", "Station Map"]
         else:
             tab_names = ["Simulation Info", "Source & Stations", "Station Map", "Rupture Map", "Slip Distribution"]
 
@@ -456,9 +463,7 @@ class ResultsPanel(ctk.CTkToplevel):
         Works for all profiles without assumptions.
         """
         self._build_info_tab()
-
-        if not self._is_exsim:
-            self._build_src_tab()
+        self._build_src_tab()
 
         # Station Map
         station_map = f"{self._outdata}/station_map.png"
