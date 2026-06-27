@@ -328,6 +328,30 @@ class ExSimPanel(ctk.CTkFrame):
             text_color="#666666"
         ).pack(side="left", padx=(10, 0))
 
+        # --- PREVIEW PATH FUNCTIONS BUTTON ---
+        preview_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        preview_row.pack(fill="x", padx=12, pady=(6, 2))
+
+        ctk.CTkButton(
+            preview_row,
+            text="Preview Path Functions",
+            height=30, width=220,
+            fg_color="#1a2a3a",
+            hover_color="#1e3a5a",
+            border_width=1,
+            border_color="#2a5a8c",
+            text_color="#5ab4ff",
+            font=(res.FONT_LABEL[0], 11),
+            command=self._preview_path_functions
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            preview_row,
+            text="Visualize GR×Q attenuation and path duration from current values",
+            font=(res.FONT_LABEL[0], 9),
+            text_color="#555555"
+        ).pack(side="left", padx=(10, 0))
+
         # --- ISLIPWEIGHT ---
         ctk.CTkLabel(
             self.adv_exsim_content,
@@ -490,16 +514,6 @@ class ExSimPanel(ctk.CTkFrame):
             text_color="white",
             command=self.clear_manual_stations
         ).pack(side="left", padx=5)
-
-        # --- STATION LIST — hidden until first station is added ---
-        self.station_list_frame = ctk.CTkFrame(
-            self.manual_panel,
-            fg_color="#1a1a1a",
-            corner_radius=6,
-            border_width=1,
-            border_color="#333333"
-        )
-        # Not packed yet — revealed by _refresh_station_list when list is non-empty
 
         # --- SECONDARY BUTTONS (above Generate/Run) ---
         self.btn_f2 = ctk.CTkFrame(self.left_column, fg_color="transparent")
@@ -710,7 +724,6 @@ class ExSimPanel(ctk.CTkFrame):
             name = self.ent_man_name.get().strip() or f"M{len(self.manual_station_list)}"
 
             self.manual_station_list.append((lon, lat, name))
-            self._refresh_station_list()
             self.trigger_map_update()
 
             if StationPanel.is_inside_basin(lon, lat):
@@ -740,138 +753,10 @@ class ExSimPanel(ctk.CTkFrame):
     def clear_manual_stations(self):
         """Removes all manually added stations and refreshes the map."""
         self.manual_station_list.clear()
-        self._refresh_station_list()
         self.trigger_map_update()
         self.help_label.configure(
             text="Manual stations cleared.", text_color="gray"
         )
-
-    def _refresh_station_list(self):
-        """
-        Rebuilds the station list UI from manual_station_list.
-        The list frame is hidden when empty and grows dynamically
-        with each station added. Called after every add, delete, or edit.
-        """
-        for widget in self.station_list_frame.winfo_children():
-            widget.destroy()
-
-        if not self.manual_station_list:
-            # Hide the frame entirely when no stations
-            self.station_list_frame.pack_forget()
-            return
-
-        # Show the frame — it will grow naturally with content
-        self.station_list_frame.pack(fill="x", padx=10, pady=(4, 8))
-
-        for idx, (lon, lat, name) in enumerate(self.manual_station_list):
-            row = ctk.CTkFrame(
-                self.station_list_frame,
-                fg_color="#2a2a2a",
-                corner_radius=4
-            )
-            row.pack(fill="x", pady=(4, 0), padx=6)
-
-            # Index badge
-            ctk.CTkLabel(
-                row,
-                text=f"{idx + 1}",
-                font=(res.FONT_LABEL[0], 11, "bold"),
-                text_color="#666666",
-                width=22,
-                anchor="e"
-            ).pack(side="left", padx=(8, 4), pady=6)
-
-            # Station name
-            ctk.CTkLabel(
-                row,
-                text=f"{name}",
-                font=(res.FONT_LABEL[0], 12, "bold"),
-                text_color="gold",
-                anchor="w",
-                width=65
-            ).pack(side="left", padx=(0, 6))
-
-            # Coordinates
-            ctk.CTkLabel(
-                row,
-                text=f"lat {lat:.5f}   lon {lon:.5f}",
-                font=(res.FONT_LABEL[0], 12),
-                text_color="#cccccc",
-                anchor="w"
-            ).pack(side="left", padx=(0, 6), fill="x", expand=True)
-
-            # Edit button
-            ctk.CTkButton(
-                row,
-                text="Edit",
-                width=48,
-                height=26,
-                font=(res.FONT_LABEL[0], 11),
-                fg_color="#1a3a5c",
-                hover_color="#1e4a7a",
-                text_color="#5ab4ff",
-                border_width=1,
-                border_color="#2a5a8c",
-                corner_radius=4,
-                command=lambda i=idx: self._edit_station(i)
-            ).pack(side="right", padx=(2, 6), pady=6)
-
-            # Delete button
-            ctk.CTkButton(
-                row,
-                text="✕",
-                width=30,
-                height=26,
-                font=(res.FONT_LABEL[0], 11),
-                fg_color="#3a1a1a",
-                hover_color="#5a2a2a",
-                text_color="#ff6666",
-                border_width=1,
-                border_color="#6a2a2a",
-                corner_radius=4,
-                command=lambda i=idx: self._delete_station(i)
-            ).pack(side="right", padx=(6, 2), pady=6)
-
-        # Bottom padding inside the frame
-        ctk.CTkFrame(
-            self.station_list_frame, fg_color="transparent", height=4
-        ).pack()
-
-    def _delete_station(self, idx):
-        """Removes the station at the given index and refreshes the list and map."""
-        if 0 <= idx < len(self.manual_station_list):
-            name = self.manual_station_list[idx][2]
-            self.manual_station_list.pop(idx)
-            self._refresh_station_list()
-            self.trigger_map_update()
-            self.help_label.configure(
-                text=f"Station {name} removed.",
-                text_color="gray"
-            )
-
-    def _edit_station(self, idx):
-        """
-        Populates the entry fields with the selected station's values
-        and removes it from the list, ready for the user to modify and re-add.
-        """
-        if 0 <= idx < len(self.manual_station_list):
-            lon, lat, name = self.manual_station_list[idx]
-            self.manual_station_list.pop(idx)
-            self._refresh_station_list()
-            self.trigger_map_update()
-
-            # Populate entry fields
-            self.ent_man_lon.delete(0, "end")
-            self.ent_man_lon.insert(0, str(lon))
-            self.ent_man_lat.delete(0, "end")
-            self.ent_man_lat.insert(0, str(lat))
-            self.ent_man_name.delete(0, "end")
-            self.ent_man_name.insert(0, name)
-
-            self.help_label.configure(
-                text=f"Editing station {name} — modify the fields above and click + ADD to save.",
-                text_color="#5ab4ff"
-            )
 
     # ------------------------------------------------------------------
     # ADVANCED PATH PARAMETERS
@@ -899,6 +784,288 @@ class ExSimPanel(ctk.CTkFrame):
             text="Advanced Path Parameters reset to LABasin500 defaults.",
             text_color="gray"
         )
+
+    def _preview_path_functions(self):
+        """
+        Opens a popup window showing three plots based on the current
+        Advanced Path Parameters values:
+          1. Geometric spreading GR(R) alone
+          2. Combined attenuation GR(R) × exp(-pi*f*R / Q(f)*beta)
+             at f=1 Hz and f=10 Hz on the same axes
+          3. Path duration vs distance
+        These correspond to Boore (2005) SMSIM Figures 3, 4 and 5.
+        """
+        import numpy as np
+        import matplotlib
+        matplotlib.use("TkAgg")
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_tkagg import (
+            FigureCanvasTkAgg, NavigationToolbar2Tk
+        )
+
+        # --- READ CURRENT VALUES ---
+        try:
+            Qmin  = float(self.adv_exsim_inputs["QMIN"].get())
+            Q0    = float(self.adv_exsim_inputs["Q0"].get())
+            eta   = float(self.adv_exsim_inputs["ETA"].get())
+            beta  = float(self.adv_exsim_inputs["BETA"].get())
+            GS_R1 = float(self.adv_exsim_inputs["GS_R1"].get())
+            GS_S1 = float(self.adv_exsim_inputs["GS_S1"].get())
+            GS_R2 = float(self.adv_exsim_inputs["GS_R2"].get())
+            GS_S2 = float(self.adv_exsim_inputs["GS_S2"].get())
+        except ValueError:
+            self.help_label.configure(
+                text="Cannot preview — check that all Advanced Path Parameters are valid numbers.",
+                text_color=res.COLOR_ERROR
+            )
+            return
+
+        # --- DISTANCE ARRAY ---
+        R = np.logspace(0, np.log10(300), 300)  # 1 to 300 km
+
+        # --- GEOMETRIC SPREADING GR(R) ---
+        GR = np.zeros_like(R)
+        GR_at_R2 = (GS_R2 / GS_R1) ** GS_S1
+        for i, r in enumerate(R):
+            if r <= GS_R2:
+                GR[i] = (r / GS_R1) ** GS_S1
+            else:
+                GR[i] = GR_at_R2 * (r / GS_R2) ** GS_S2
+
+        # --- Q(f) AND COMBINED ATTENUATION ---
+        def Q_f(f):
+            return max(Qmin, Q0 * (f ** eta))
+
+        def combined(f):
+            Qval = Q_f(f)
+            return GR * np.exp(-np.pi * f * R / (Qval * beta))
+
+        C1  = combined(1.0)
+        C10 = combined(10.0)
+
+        # --- PATH DURATION (from .par defaults — piecewise linear) ---
+        # ndur_hinges=2, (0.0, 1.0), (50.0, 10.0), slope=0.05
+        rdur = [0.0, 50.0]
+        dur_vals = [1.0, 10.0]
+        slope_last = 0.05
+
+        def path_dur(r):
+            if r <= rdur[1]:
+                frac = (r - rdur[0]) / (rdur[1] - rdur[0])
+                return dur_vals[0] + frac * (dur_vals[1] - dur_vals[0])
+            else:
+                return dur_vals[1] + slope_last * (r - rdur[1])
+
+        D = np.array([path_dur(r) for r in R])
+
+        # --- BUILD POPUP WINDOW ---
+        win = ctk.CTkToplevel(self.winfo_toplevel())
+        win.title("Path Function Preview")
+        win.configure(fg_color="#0d0d0d")
+        win.geometry("1000x780")
+        win.transient(self.winfo_toplevel())
+        win.lift()
+        win.focus_force()
+
+        # Header
+        hdr = ctk.CTkFrame(win, fg_color="#111111", corner_radius=0, height=50)
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
+
+        ctk.CTkLabel(
+            hdr,
+            text="Path Function Preview — based on current Advanced Path Parameters",
+            font=(res.FONT_LABEL[0], 12, "bold"),
+            text_color="#5ab4ff"
+        ).pack(side="left", padx=15, pady=14)
+
+        ctk.CTkButton(
+            hdr, text="Close", width=80, height=30,
+            fg_color="#333333", hover_color="#444444",
+            command=win.destroy
+        ).pack(side="right", padx=12, pady=10)
+
+        # Parameter summary strip
+        param_strip = ctk.CTkFrame(win, fg_color="#1a1a1a", corner_radius=0, height=32)
+        param_strip.pack(fill="x")
+        param_strip.pack_propagate(False)
+
+        param_text = (
+            f"Qmin={Qmin:.0f}  Q0={Q0:.0f}  η={eta:.2f}  β={beta:.2f} km/s  "
+            f"GS: R₁={GS_R1:.0f} km (s={GS_S1:.1f}) → R₂={GS_R2:.0f} km (s={GS_S2:.1f})  "
+            f"Q(1Hz)={Q_f(1.0):.0f}  Q(10Hz)={Q_f(10.0):.0f}"
+        )
+        ctk.CTkLabel(
+            param_strip,
+            text=param_text,
+            font=(res.FONT_LABEL[0], 10),
+            text_color="#888888"
+        ).pack(side="left", padx=14, pady=6)
+
+        # --- EXPLANATION SECTION ---
+        explain_frame = ctk.CTkFrame(win, fg_color="#111111", corner_radius=0)
+        explain_frame.pack(fill="x", padx=0, pady=0)
+
+        explain_cols = ctk.CTkFrame(explain_frame, fg_color="transparent")
+        explain_cols.pack(fill="x", padx=14, pady=10)
+        explain_cols.grid_columnconfigure((0, 1, 2), weight=1, uniform="col")
+
+        def _explain_card(parent, col, title, color, body):
+            card = ctk.CTkFrame(
+                parent,
+                fg_color="#1a1a1a",
+                corner_radius=6,
+                border_width=1,
+                border_color="#2a2a2a"
+            )
+            card.grid(row=0, column=col, padx=6, sticky="nsew")
+
+            ctk.CTkLabel(
+                card,
+                text=title,
+                font=(res.FONT_LABEL[0], 11, "bold"),
+                text_color=color,
+                anchor="w"
+            ).pack(anchor="w", padx=10, pady=(8, 2))
+
+            ctk.CTkLabel(
+                card,
+                text=body,
+                font=(res.FONT_LABEL[0], 10),
+                text_color="#777777",
+                wraplength=270,
+                justify="left",
+                anchor="w"
+            ).pack(anchor="w", padx=10, pady=(0, 10))
+
+        _explain_card(
+            explain_cols, 0,
+            "Plot 1 — Geometric Spreading  GR(R)",
+            "#5ab4ff",
+            (
+                "Shows how seismic wave amplitude decays with distance due to "
+                "geometric spreading alone — the physical spreading of energy over "
+                "a growing wavefront. Modeled as a piecewise power law:\n"
+                "  GR(R) = (R/R₁)^s₁   for R ≤ R₂\n"
+                "  GR(R) = GR(R₂) × (R/R₂)^s₂   for R > R₂\n\n"
+                "s₁ ≈ −1.0 represents body wave spreading; "
+                "s₂ ≈ −0.5 the slower surface wave decay at larger distances. "
+                "The transition distance R₂ marks where the dominant wave type changes.\n\n"
+                "Source: Boore (2005) SMSIM, Figure 3."
+            )
+        )
+
+        _explain_card(
+            explain_cols, 1,
+            "Plot 2 — Combined Attenuation  GR(R) × Q",
+            "#ff6666",
+            (
+                "Shows the total amplitude decay combining geometric spreading "
+                "with anelastic attenuation (energy absorbed by the crust). "
+                "The full path term is:\n"
+                "  A(R, f) = GR(R) × exp(−π f R / Q(f) β)\n\n"
+                "where Q(f) = max(Qmin, Q₀ × f^η) is the quality factor — "
+                "higher Q means less absorption. Two curves are shown:\n"
+                "  Blue  → f = 1 Hz  (low frequency)\n"
+                "  Red   → f = 10 Hz (high frequency)\n\n"
+                "High-frequency waves always attenuate faster. "
+                "ENA rock has high Q (>600), so waves travel farther than in California.\n\n"
+                "Source: Boore (2005) SMSIM, Figure 4."
+            )
+        )
+
+        _explain_card(
+            explain_cols, 2,
+            "Plot 3 — Path Duration  D(R)",
+            "#88dd88",
+            (
+                "Shows how the duration of strong shaking grows with distance. "
+                "This is the path contribution to total ground motion duration — "
+                "separate from the source duration which depends on magnitude.\n\n"
+                "Modeled as a piecewise linear function defined by hinge points "
+                "(distance, duration) and a final slope:\n"
+                "  D(R) increases linearly between hinges\n"
+                "  Beyond the last hinge: D(R) = D_last + slope × ΔR\n\n"
+                "Longer path duration means shaking lasts longer at greater distances, "
+                "even after amplitude has decayed. "
+                "Values shown use labasin_exsim.par defaults — "
+                "these are not exposed as GUI fields.\n\n"
+                "Source: Boore (2005) SMSIM, Figure 5."
+            )
+        )
+
+        # --- MATPLOTLIB FIGURE ---
+        fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
+        fig.patch.set_facecolor("#0d0d0d")
+
+        def style_ax(ax, title, xlabel, ylabel):
+            ax.set_facecolor("#111111")
+            ax.set_title(title, color="#aaaaaa", fontsize=10, pad=8)
+            ax.set_xlabel(xlabel, color="#777777", fontsize=9)
+            ax.set_ylabel(ylabel, color="#777777", fontsize=9)
+            ax.tick_params(colors="#666666", labelsize=8)
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#333333")
+            ax.grid(True, color="#222222", linewidth=0.5, linestyle="--")
+
+        # Plot 1 — Geometric Spreading
+        ax1 = axes[0]
+        ax1.loglog(R, GR, color="#5ab4ff", linewidth=2, label="GR(R)")
+        ax1.axvline(GS_R2, color="#ffaa44", linewidth=1,
+                    linestyle="--", label=f"R₂={GS_R2:.0f} km")
+        ax1.legend(fontsize=8, facecolor="#1a1a1a",
+                   edgecolor="#333333", labelcolor="white")
+        style_ax(ax1, "Geometric Spreading GR(R)",
+                 "Distance (km)", "GR (dimensionless)")
+
+        # Plot 2 — Combined attenuation GR × Q
+        ax2 = axes[1]
+        ax2.loglog(R, C1,  color="#5ab4ff", linewidth=2,
+                   label=f"f=1 Hz  [Q={Q_f(1.0):.0f}]")
+        ax2.loglog(R, C10, color="#ff6666", linewidth=2,
+                   label=f"f=10 Hz [Q={Q_f(10.0):.0f}]")
+        ax2.legend(fontsize=8, facecolor="#1a1a1a",
+                   edgecolor="#333333", labelcolor="white")
+        style_ax(ax2, "Combined Attenuation  GR(R) × exp(−πfR/Qβ)",
+                 "Distance (km)", "Amplitude (relative)")
+
+        # Plot 3 — Path Duration
+        ax3 = axes[2]
+        ax3.semilogx(R, D, color="#88dd88", linewidth=2)
+        ax3.axvline(rdur[1], color="#ffaa44", linewidth=1,
+                    linestyle="--", label=f"hinge at {rdur[1]:.0f} km")
+        ax3.legend(fontsize=8, facecolor="#1a1a1a",
+                   edgecolor="#333333", labelcolor="white")
+        style_ax(ax3, "Path Duration  D(R)",
+                 "Distance (km)", "Duration (s)")
+
+        fig.tight_layout(pad=2.0)
+
+        # Embed in popup
+        canvas_frame = ctk.CTkFrame(win, fg_color="#0d0d0d")
+        canvas_frame.pack(fill="both", expand=True, padx=10, pady=(6, 0))
+
+        canvas = FigureCanvasTkAgg(fig, master=canvas_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        toolbar_frame = ctk.CTkFrame(win, fg_color="#111111", corner_radius=0)
+        toolbar_frame.pack(fill="x")
+        NavigationToolbar2Tk(canvas, toolbar_frame)
+
+        # Bottom note
+        ctk.CTkLabel(
+            win,
+            text=(
+                "All plots are computed live from the current Advanced Path Parameter values above. "
+                "Change a value in the panel and click Preview again to update. "
+                "Path duration uses labasin_exsim.par internal defaults (not editable in GUI)."
+            ),
+            font=(res.FONT_LABEL[0], 9),
+            text_color="#444444",
+            wraplength=960,
+            justify="center"
+        ).pack(pady=(4, 10))
 
     def _on_islipweight_change(self, choice):
         """Shows or hides the slip file picker based on islipweight selection."""

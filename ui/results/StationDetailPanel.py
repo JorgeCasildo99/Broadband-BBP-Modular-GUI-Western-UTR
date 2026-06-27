@@ -857,6 +857,42 @@ class StationDetailPanel(ctk.CTkToplevel):
             wraplength=820, justify="left"
         ).pack(anchor="w", padx=14, pady=(0, 12))
 
+        # ExSIM-specific note — only shown for ExSIM runs
+        if self.is_exsim:
+            exsim_note = ctk.CTkFrame(
+                scroll,
+                fg_color="#1a1a0a",
+                corner_radius=6,
+                border_width=1,
+                border_color="#4a4a1a"
+            )
+            exsim_note.pack(fill="x", pady=(0, 10))
+
+            ctk.CTkLabel(
+                exsim_note,
+                text="ℹ  Expected result for ExSIM",
+                font=(res.FONT_LABEL[0], 11, "bold"),
+                text_color="#cccc55",
+                anchor="w"
+            ).pack(anchor="w", padx=12, pady=(8, 2))
+
+            ctk.CTkLabel(
+                exsim_note,
+                text=(
+                    "ExSIM generates all three components (NS, EW, U/D) from a single "
+                    "stochastic source, so they are nearly identical by construction. "
+                    "As a result, HVSR = √(NS × EW) / Z ≈ 1.0 across all frequencies — "
+                    "this is expected and correct, not a sign of an error.\n"
+                    "HVSR is physically meaningful only for GP runs and real recordings, "
+                    "where NS, EW, and vertical components are computed independently."
+                ),
+                font=(res.FONT_LABEL[0], 11),
+                text_color="#888855",
+                wraplength=820,
+                justify="left",
+                anchor="w"
+            ).pack(anchor="w", padx=12, pady=(0, 10))
+
         # --- COMPUTE BUTTON + PROGRESS AREA ---
         action_frame = ctk.CTkFrame(scroll, fg_color="transparent")
         action_frame.pack(fill="x", pady=(0, 10))

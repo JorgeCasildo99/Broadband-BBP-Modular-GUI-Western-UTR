@@ -491,5 +491,38 @@ class MainPanel(ctk.CTk):
 # ENTRY POINT
 # ------------------------------------------------------------------
 if __name__ == "__main__":
+    import sys
+
+    def _on_close():
+        """
+        Clean shutdown handler — cancels any pending after() callbacks
+        before destroying the window so Tkinter doesn't fire them into
+        a destroyed application and print bgerror messages.
+        """
+        try:
+            # Cancel all pending after() callbacks
+            for after_id in app.tk.call("after", "info"):
+                try:
+                    app.after_cancel(after_id)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            app.quit()
+        except Exception:
+            pass
+        try:
+            app.destroy()
+        except Exception:
+            pass
+        sys.exit(0)
+
     app = MainPanel()
-    app.mainloop()
+    app.protocol("WM_DELETE_WINDOW", _on_close)
+    try:
+        app.mainloop()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sys.exit(0)

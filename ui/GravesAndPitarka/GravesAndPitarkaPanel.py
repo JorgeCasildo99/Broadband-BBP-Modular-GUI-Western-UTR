@@ -203,6 +203,20 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
             entry.grid(row=0, column=i * 2 + 1, padx=(0, 8), pady=6, sticky="ew")
             self.adv_inputs[param] = entry
 
+        # Caption explaining DLEN/DWID meaning
+        ctk.CTkLabel(
+            adv_grid,
+            text=(
+                "DLEN/DWID set the Genslip subfault grid:\n"
+                "nstk = round(Fault Length / DLEN)  along strike\n"
+                "ndip = round(Fault Width / DWID)   down dip"
+            ),
+            font=(res.FONT_LABEL[0], 9),
+            text_color="#555555",
+            justify="left",
+            anchor="w"
+        ).grid(row=1, column=0, columnspan=6, padx=8, pady=(0, 4), sticky="w")
+
         # --- MANUAL STATION PANEL ---
         self.manual_panel = ctk.CTkFrame(
             self.left_column, fg_color="#252525", border_width=1, border_color="gold"
