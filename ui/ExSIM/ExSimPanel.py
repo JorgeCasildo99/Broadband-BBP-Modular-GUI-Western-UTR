@@ -515,6 +515,16 @@ class ExSimPanel(ctk.CTkFrame):
             command=self.clear_manual_stations
         ).pack(side="left", padx=5)
 
+        # --- STATION LIST — hidden until first station is added ---
+        self.station_list_frame = ctk.CTkFrame(
+            self.manual_panel,
+            fg_color="#1a1a1a",
+            corner_radius=6,
+            border_width=1,
+            border_color="#333333"
+        )
+        # Not packed yet — revealed by _refresh_station_list when list is non-empty
+
         # --- SECONDARY BUTTONS (above Generate/Run) ---
         self.btn_f2 = ctk.CTkFrame(self.left_column, fg_color="transparent")
         self.btn_f2.pack(fill="x", pady=(8, 4), padx=5)
@@ -724,6 +734,7 @@ class ExSimPanel(ctk.CTkFrame):
             name = self.ent_man_name.get().strip() or f"M{len(self.manual_station_list)}"
 
             self.manual_station_list.append((lon, lat, name))
+            self._refresh_station_list()
             self.trigger_map_update()
 
             if StationPanel.is_inside_basin(lon, lat):
@@ -753,10 +764,129 @@ class ExSimPanel(ctk.CTkFrame):
     def clear_manual_stations(self):
         """Removes all manually added stations and refreshes the map."""
         self.manual_station_list.clear()
+        self._refresh_station_list()
         self.trigger_map_update()
         self.help_label.configure(
             text="Manual stations cleared.", text_color="gray"
         )
+
+    def _refresh_station_list(self):
+        """
+        Rebuilds the station list UI from manual_station_list.
+        The list frame is hidden when empty and grows dynamically
+        with each station added.
+        """
+        for widget in self.station_list_frame.winfo_children():
+            widget.destroy()
+
+        if not self.manual_station_list:
+            self.station_list_frame.pack_forget()
+            return
+
+        self.station_list_frame.pack(fill="x", padx=10, pady=(4, 8))
+
+        for idx, (lon, lat, name) in enumerate(self.manual_station_list):
+            row = ctk.CTkFrame(
+                self.station_list_frame,
+                fg_color="#2a2a2a",
+                corner_radius=4
+            )
+            row.pack(fill="x", pady=(4, 0), padx=6)
+
+            ctk.CTkLabel(
+                row,
+                text=f"{idx + 1}",
+                font=(res.FONT_LABEL[0], 11, "bold"),
+                text_color="#666666",
+                width=22,
+                anchor="e"
+            ).pack(side="left", padx=(8, 4), pady=6)
+
+            ctk.CTkLabel(
+                row,
+                text=f"{name}",
+                font=(res.FONT_LABEL[0], 12, "bold"),
+                text_color="gold",
+                anchor="w",
+                width=65
+            ).pack(side="left", padx=(0, 6))
+
+            ctk.CTkLabel(
+                row,
+                text=f"lat {lat:.5f}   lon {lon:.5f}",
+                font=(res.FONT_LABEL[0], 12),
+                text_color="#cccccc",
+                anchor="w"
+            ).pack(side="left", padx=(0, 6), fill="x", expand=True)
+
+            ctk.CTkButton(
+                row,
+                text="Edit",
+                width=48,
+                height=26,
+                font=(res.FONT_LABEL[0], 11),
+                fg_color="#1a3a5c",
+                hover_color="#1e4a7a",
+                text_color="#5ab4ff",
+                border_width=1,
+                border_color="#2a5a8c",
+                corner_radius=4,
+                command=lambda i=idx: self._edit_station(i)
+            ).pack(side="right", padx=(2, 6), pady=6)
+
+            ctk.CTkButton(
+                row,
+                text="✕",
+                width=30,
+                height=26,
+                font=(res.FONT_LABEL[0], 11),
+                fg_color="#3a1a1a",
+                hover_color="#5a2a2a",
+                text_color="#ff6666",
+                border_width=1,
+                border_color="#6a2a2a",
+                corner_radius=4,
+                command=lambda i=idx: self._delete_station(i)
+            ).pack(side="right", padx=(6, 2), pady=6)
+
+        ctk.CTkFrame(
+            self.station_list_frame, fg_color="transparent", height=4
+        ).pack()
+
+    def _delete_station(self, idx):
+        """Removes the station at the given index and refreshes list and map."""
+        if 0 <= idx < len(self.manual_station_list):
+            name = self.manual_station_list[idx][2]
+            self.manual_station_list.pop(idx)
+            self._refresh_station_list()
+            self.trigger_map_update()
+            self.help_label.configure(
+                text=f"Station {name} removed.",
+                text_color="gray"
+            )
+
+    def _edit_station(self, idx):
+        """
+        Populates entry fields with the selected station's values
+        and removes it from the list, ready to modify and re-add.
+        """
+        if 0 <= idx < len(self.manual_station_list):
+            lon, lat, name = self.manual_station_list[idx]
+            self.manual_station_list.pop(idx)
+            self._refresh_station_list()
+            self.trigger_map_update()
+
+            self.ent_man_lon.delete(0, "end")
+            self.ent_man_lon.insert(0, str(lon))
+            self.ent_man_lat.delete(0, "end")
+            self.ent_man_lat.insert(0, str(lat))
+            self.ent_man_name.delete(0, "end")
+            self.ent_man_name.insert(0, name)
+
+            self.help_label.configure(
+                text=f"Editing station {name} — modify the fields above and click + ADD to save.",
+                text_color="#5ab4ff"
+            )
 
     # ------------------------------------------------------------------
     # ADVANCED PATH PARAMETERS

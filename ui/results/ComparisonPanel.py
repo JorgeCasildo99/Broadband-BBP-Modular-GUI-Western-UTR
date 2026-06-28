@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(BASE_DIR, "core"))
 import core.Resources as res
 from core.WSLBridge import WSLBridge
 from ui.results.ImageFullscreenPanel import ImageFullscreenPanel
+from ui.results.ComparisonMapWidget import ComparisonMapWidget
 
 import matplotlib
 matplotlib.use("Agg")
@@ -170,26 +171,43 @@ class ComparisonPanel(ctk.CTkToplevel):
         main.pack(fill="both", expand=True, padx=10, pady=10)
         main.grid_columnconfigure(0, weight=0, minsize=370)
         main.grid_columnconfigure(1, weight=1)
-        main.grid_rowconfigure(0, weight=1)
+        main.grid_rowconfigure(0, weight=0)  # map row — fixed height
+        main.grid_rowconfigure(1, weight=1)  # plot row — expands
 
         left = ctk.CTkFrame(
             main, fg_color="#1e1e1e",
             border_width=1, border_color="#333333",
             corner_radius=8
         )
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        left.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 8))
         self._build_controls(left)
 
+        # --- STATION MAP (top-right) ---
+        self.map_widget = ComparisonMapWidget(
+            main,
+            on_station_selected_a=self._on_map_select_a,
+            on_station_selected_b=self._on_map_select_b,
+            fg_color="#111111",
+            corner_radius=8,
+            border_width=1,
+            border_color="#333333"
+        )
+        self.map_widget.grid(row=0, column=1, sticky="nsew",
+                             pady=(0, 8), ipady=0)
+        self.map_widget.configure(height=260)
+        self.map_widget.grid_propagate(False)
+
+        # --- PLOT FRAME (bottom-right) ---
         self.plot_frame = ctk.CTkFrame(
             main, fg_color="#111111",
             border_width=1, border_color="#333333",
             corner_radius=8
         )
-        self.plot_frame.grid(row=0, column=1, sticky="nsew")
+        self.plot_frame.grid(row=1, column=1, sticky="nsew")
 
         self.lbl_plot_hint = ctk.CTkLabel(
             self.plot_frame,
-            text="Select a simulation run\nto generate the plot",
+            text="Select a simulation run and click a station on the map\nto generate the plot",
             font=(res.FONT_LABEL[0], 13),
             text_color="#444444", justify="center"
         )
@@ -224,7 +242,7 @@ class ComparisonPanel(ctk.CTkToplevel):
         _lbl("Station:")
         self.menu_sta_a = _option_menu(
             parent, [_PLACEHOLDER],
-            command=lambda v: self._schedule_load()
+            command=lambda v: (self.map_widget.set_selected_a(v), self._schedule_load())
         )
         self.menu_sta_a.pack(fill="x", padx=14, pady=(2, 4))
 
@@ -271,7 +289,7 @@ class ComparisonPanel(ctk.CTkToplevel):
         _lbl("Station:")
         self.menu_sta_b = _option_menu(
             parent, ["— enable Signal B first —"],
-            command=lambda v: self._schedule_load(),
+            command=lambda v: (self.map_widget.set_selected_b(v), self._schedule_load()),
             state="disabled"
         )
         self.menu_sta_b.pack(fill="x", padx=14, pady=(2, 4))
@@ -423,8 +441,26 @@ class ComparisonPanel(ctk.CTkToplevel):
             self._cache_b = None
             self._schedule_redraw()
 
+    def _on_map_select_a(self, station_name):
+        """Called when user clicks a station on Map A — updates dropdown and reloads."""
+        stations = self._get_stations_for_run(
+            self._get_run_by_label(self.menu_run_a.get())
+        )
+        if station_name in stations:
+            self.menu_sta_a.set(station_name)
+            self._schedule_load()
+
+    def _on_map_select_b(self, station_name):
+        """Called when user clicks a station on Map B — updates dropdown and reloads."""
+        stations = self._get_stations_for_run(
+            self._get_run_by_label(self.menu_run_b.get())
+        )
+        if station_name in stations:
+            self.menu_sta_b.set(station_name)
+            self._schedule_load()
+
     def _on_run_changed(self, signal):
-        """When a run changes: refresh station list, then reload data."""
+        """When a run changes: refresh station list, map, then reload data."""
         menu_run = self.menu_run_a if signal == "A" else self.menu_run_b
         menu_sta = self.menu_sta_a if signal == "A" else self.menu_sta_b
 
@@ -441,6 +477,19 @@ class ComparisonPanel(ctk.CTkToplevel):
         else:
             menu_sta.configure(values=["— no stations found —"])
             menu_sta.set("— no stations found —")
+
+        # Refresh the map for this run
+        try:
+            if signal == "A":
+                self.map_widget.load_run_a(run)
+                if stations:
+                    self.map_widget.set_selected_a(stations[0])
+            else:
+                self.map_widget.load_run_b(run)
+                if stations:
+                    self.map_widget.set_selected_b(stations[0])
+        except Exception:
+            pass
 
         self._schedule_load()
 
