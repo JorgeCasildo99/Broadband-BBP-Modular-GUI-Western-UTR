@@ -240,11 +240,28 @@ class ExSimPanel(ctk.CTkFrame):
             "ETA"    : "0.55",
             "BETA"   : "3.7",
             "RHO"    : "2.8",
-            "GS_R1"  : "1.0",
-            "GS_S1"  : "-1.0",
-            "GS_R2"  : "40.0",
-            "GS_S2"  : "-0.5",
         }
+        # Default geometric spreading segments: list of (R_km_str, slope_str).
+        # AB06 trilinear uses [(70, -1.3), (140, +0.2), (300, -0.5)]
+        self._gs_segments_default = [
+            ("1.0",  "-1.0"),
+            ("40.0", "-0.5"),
+        ]
+        # Live segment list — each entry: (CTkEntry_R, CTkEntry_S, row_frame)
+        self._gs_segment_rows = []
+
+        # Default D(R) segments: list of (R_km_str, coeff_str) tuples.
+        # AB06: (10, 0.0), (70, 0.16), (130, 0.03), (300, 0.04)
+        # Each pair = (distance cutoff km, duration growth coefficient d)
+        # Final segment's coefficient applies beyond its cutoff.
+        self._dr_segments_default = [
+            ("10",  "0.0"),
+            ("70",  "0.16"),
+            ("130", "0.03"),
+            ("300", "0.04"),
+        ]
+        # Live D(R) segment rows — (CTkEntry_R, CTkEntry_d, row_frame)
+        self._dr_segment_rows = []
 
         self.adv_exsim_inputs = {}
 
@@ -254,10 +271,6 @@ class ExSimPanel(ctk.CTkFrame):
             "ETA"         : "Q frequency exponent — controls how Q grows with frequency.",
             "BETA"        : "Reference shear wave velocity (km/s) at the source depth.",
             "RHO"         : "Crustal density (g/cm³) at the source depth.",
-            "GS_R1"       : "Geometric spreading — distance (km) for first segment start.",
-            "GS_S1"       : "Geometric spreading — slope for first segment (e.g. -1.0 = body wave).",
-            "GS_R2"       : "Geometric spreading — transition distance (km) to second segment.",
-            "GS_S2"       : "Geometric spreading — slope for second segment (e.g. -0.5 = surface wave).",
             "ISLIPWEIGHT" : (
                 "Controls how slip is distributed across the fault subfaults. "
                 "Uniform: same slip everywhere. "
@@ -268,10 +281,8 @@ class ExSimPanel(ctk.CTkFrame):
         }
 
         param_rows = [
-            ("Quality Factor",        [("Qmin",  "QMIN"), ("Q0",   "Q0"),   ("eta", "ETA")]),
-            ("Crustal Properties",    [("β (km/s)", "BETA"), ("ρ (g/cm³)", "RHO")]),
-            ("Geometric Spreading",   [("R1 (km)", "GS_R1"), ("Slope 1", "GS_S1")]),
-            ("",                      [("R2 (km)", "GS_R2"), ("Slope 2", "GS_S2")]),
+            ("Quality Factor",     [("Qmin",  "QMIN"), ("Q0",   "Q0"),   ("eta", "ETA")]),
+            ("Crustal Properties", [("β (km/s)", "BETA"), ("ρ (g/cm³)", "RHO")]),
         ]
 
         for section_title, params in param_rows:
@@ -306,6 +317,90 @@ class ExSimPanel(ctk.CTkFrame):
 
         # Add descriptions to main descriptions dict for hover help
         self.descriptions.update(adv_descriptions)
+
+        # ── GEOMETRIC SPREADING — dynamic multi-segment UI ──
+        ctk.CTkLabel(
+            self.adv_exsim_content,
+            text="Geometric Spreading  G(R)",
+            font=(res.FONT_LABEL[0], 11, "bold"),
+            text_color="#ffaa44",
+            anchor="w"
+        ).pack(anchor="w", padx=12, pady=(8, 2))
+
+        # Column headers
+        gs_hdr = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        gs_hdr.pack(fill="x", padx=12, pady=(0, 2))
+        for col_txt in ["#", "Distance cutoff (km)", "Slope", ""]:
+            ctk.CTkLabel(
+                gs_hdr, text=col_txt,
+                font=(res.FONT_LABEL[0], 9, "bold"),
+                text_color="#888888", width=110 if col_txt != "#" else 24, anchor="w"
+            ).pack(side="left", padx=(0, 4))
+
+        # Container that holds all segment rows (packed dynamically)
+        self._gs_rows_container = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        self._gs_rows_container.pack(fill="x", padx=12)
+
+        # "Add segment" button
+        gs_add_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        gs_add_row.pack(fill="x", padx=12, pady=(4, 0))
+        ctk.CTkButton(
+            gs_add_row, text="+ Add Segment", width=130, height=26,
+            fg_color="#1a3a1a", hover_color="#2a4a2a",
+            text_color="#88dd88", font=(res.FONT_LABEL[0], 10),
+            command=self._gs_add_segment
+        ).pack(side="left")
+        ctk.CTkLabel(
+            gs_add_row,
+            text="AB06 trilinear: 70 km / −1.3  →  140 km / +0.2  →  300 km / −0.5",
+            font=(res.FONT_LABEL[0], 9), text_color="#555555"
+        ).pack(side="left", padx=(10, 0))
+
+        # Build default GS segments
+        for r_val, s_val in self._gs_segments_default:
+            self._gs_add_segment(r_val, s_val)
+
+        # ── PATH DURATION — dynamic multi-segment UI ──
+        ctk.CTkLabel(
+            self.adv_exsim_content,
+            text="Path Duration  D(R)",
+            font=(res.FONT_LABEL[0], 11, "bold"),
+            text_color="#ffaa44",
+            anchor="w"
+        ).pack(anchor="w", padx=12, pady=(10, 2))
+
+        # Column headers
+        dr_hdr = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        dr_hdr.pack(fill="x", padx=12, pady=(0, 2))
+        for col_txt in ["#", "Distance cutoff (km)", "Coeff d", ""]:
+            ctk.CTkLabel(
+                dr_hdr, text=col_txt,
+                font=(res.FONT_LABEL[0], 9, "bold"),
+                text_color="#888888", width=110 if col_txt != "#" else 24, anchor="w"
+            ).pack(side="left", padx=(0, 4))
+
+        # Container
+        self._dr_rows_container = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        self._dr_rows_container.pack(fill="x", padx=12)
+
+        # Add segment button
+        dr_add_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        dr_add_row.pack(fill="x", padx=12, pady=(4, 0))
+        ctk.CTkButton(
+            dr_add_row, text="+ Add Segment", width=130, height=26,
+            fg_color="#1a3a1a", hover_color="#2a4a2a",
+            text_color="#88dd88", font=(res.FONT_LABEL[0], 10),
+            command=self._dr_add_segment
+        ).pack(side="left")
+        ctk.CTkLabel(
+            dr_add_row,
+            text="AB06: 10 km/0.0  →  70 km/0.16  →  130 km/0.03  →  300 km/0.04",
+            font=(res.FONT_LABEL[0], 9), text_color="#555555"
+        ).pack(side="left", padx=(10, 0))
+
+        # Build default D(R) segments
+        for r_val, d_val in self._dr_segments_default:
+            self._dr_add_segment(r_val, d_val)
 
         # Reset button
         reset_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
@@ -892,6 +987,177 @@ class ExSimPanel(ctk.CTkFrame):
     # ADVANCED PATH PARAMETERS
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # GEOMETRIC SPREADING — dynamic segment management
+    # ------------------------------------------------------------------
+
+    def _gs_add_segment(self, r_val="1.0", s_val="-1.0"):
+        """Adds one geometric spreading segment row to the container."""
+        idx = len(self._gs_segment_rows)
+
+        row = ctk.CTkFrame(self._gs_rows_container, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 3))
+
+        # Index label
+        ctk.CTkLabel(
+            row, text=f"{idx+1}", width=24,
+            font=(res.FONT_LABEL[0], 10, "bold"),
+            text_color="#666666", anchor="center"
+        ).pack(side="left", padx=(0, 4))
+
+        # Distance cutoff entry
+        ent_r = ctk.CTkEntry(row, height=28, width=110)
+        ent_r.insert(0, str(r_val))
+        ent_r.pack(side="left", padx=(0, 8))
+
+        # Slope entry
+        ent_s = ctk.CTkEntry(row, height=28, width=80)
+        ent_s.insert(0, str(s_val))
+        ent_s.pack(side="left", padx=(0, 8))
+
+        # Remove button — only shown when more than 1 segment exists
+        btn_remove = ctk.CTkButton(
+            row, text="−", width=28, height=26,
+            fg_color="#3a1a1a", hover_color="#5a2a2a",
+            text_color="#ff6666", font=(res.FONT_LABEL[0], 12),
+            corner_radius=4,
+            command=lambda r=row: self._gs_remove_segment(r)
+        )
+        btn_remove.pack(side="left")
+
+        self._gs_segment_rows.append((ent_r, ent_s, row))
+        self._gs_refresh_remove_buttons()
+
+    def _gs_remove_segment(self, row_frame):
+        """Removes the segment row whose frame matches row_frame."""
+        self._gs_segment_rows = [
+            (er, es, rf) for (er, es, rf) in self._gs_segment_rows
+            if rf is not row_frame
+        ]
+        row_frame.destroy()
+        self._gs_refresh_remove_buttons()
+        # Renumber index labels
+        for i, (er, es, rf) in enumerate(self._gs_segment_rows):
+            for child in rf.winfo_children():
+                if isinstance(child, ctk.CTkLabel):
+                    child.configure(text=f"{i+1}")
+                    break
+
+    def _gs_refresh_remove_buttons(self):
+        """Shows remove buttons only when there are 2+ segments."""
+        show = len(self._gs_segment_rows) > 1
+        for (er, es, rf) in self._gs_segment_rows:
+            children = rf.winfo_children()
+            # The remove button is always the last child
+            if children:
+                btn = children[-1]
+                if show:
+                    btn.pack(side="left")
+                else:
+                    btn.pack_forget()
+
+    def _get_gs_segments(self):
+        """
+        Reads all segment rows and returns a list of (R_km, slope) floats.
+        Raises ValueError if any entry is invalid.
+        """
+        segments = []
+        for i, (ent_r, ent_s, _) in enumerate(self._gs_segment_rows):
+            try:
+                r = float(ent_r.get())
+                s = float(ent_s.get())
+            except ValueError:
+                raise ValueError(f"Segment {i+1}: distance and slope must be numbers.")
+            if r <= 0:
+                raise ValueError(f"Segment {i+1}: distance cutoff must be > 0.")
+            segments.append((r, s))
+        if not segments:
+            raise ValueError("At least one geometric spreading segment is required.")
+        return segments
+
+    # ------------------------------------------------------------------
+    # PATH DURATION — dynamic segment management
+    # ------------------------------------------------------------------
+
+    def _dr_add_segment(self, r_val="50.0", d_val="0.05"):
+        """Adds one D(R) segment row to the container."""
+        idx = len(self._dr_segment_rows)
+
+        row = ctk.CTkFrame(self._dr_rows_container, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 3))
+
+        ctk.CTkLabel(
+            row, text=f"{idx+1}", width=24,
+            font=(res.FONT_LABEL[0], 10, "bold"),
+            text_color="#666666", anchor="center"
+        ).pack(side="left", padx=(0, 4))
+
+        ent_r = ctk.CTkEntry(row, height=28, width=110)
+        ent_r.insert(0, str(r_val))
+        ent_r.pack(side="left", padx=(0, 8))
+
+        ent_d = ctk.CTkEntry(row, height=28, width=80)
+        ent_d.insert(0, str(d_val))
+        ent_d.pack(side="left", padx=(0, 8))
+
+        btn_remove = ctk.CTkButton(
+            row, text="−", width=28, height=26,
+            fg_color="#3a1a1a", hover_color="#5a2a2a",
+            text_color="#ff6666", font=(res.FONT_LABEL[0], 12),
+            corner_radius=4,
+            command=lambda r=row: self._dr_remove_segment(r)
+        )
+        btn_remove.pack(side="left")
+
+        self._dr_segment_rows.append((ent_r, ent_d, row))
+        self._dr_refresh_remove_buttons()
+
+    def _dr_remove_segment(self, row_frame):
+        """Removes the D(R) segment row matching row_frame."""
+        self._dr_segment_rows = [
+            (er, ed, rf) for (er, ed, rf) in self._dr_segment_rows
+            if rf is not row_frame
+        ]
+        row_frame.destroy()
+        self._dr_refresh_remove_buttons()
+        for i, (er, ed, rf) in enumerate(self._dr_segment_rows):
+            for child in rf.winfo_children():
+                if isinstance(child, ctk.CTkLabel):
+                    child.configure(text=f"{i+1}")
+                    break
+
+    def _dr_refresh_remove_buttons(self):
+        """Shows remove buttons only when 2+ segments exist."""
+        show = len(self._dr_segment_rows) > 1
+        for (er, ed, rf) in self._dr_segment_rows:
+            children = rf.winfo_children()
+            if children:
+                btn = children[-1]
+                if show:
+                    btn.pack(side="left")
+                else:
+                    btn.pack_forget()
+
+    def _get_dr_segments(self):
+        """
+        Returns list of (R_km, coeff_d) floats from UI.
+        Raises ValueError on bad input.
+        The last segment's coeff applies beyond its cutoff distance.
+        """
+        segments = []
+        for i, (ent_r, ent_d, _) in enumerate(self._dr_segment_rows):
+            try:
+                r = float(ent_r.get())
+                d = float(ent_d.get())
+            except ValueError:
+                raise ValueError(f"D(R) Segment {i+1}: distance and coefficient must be numbers.")
+            if r <= 0:
+                raise ValueError(f"D(R) Segment {i+1}: distance cutoff must be > 0.")
+            segments.append((r, d))
+        if not segments:
+            raise ValueError("At least one path duration segment is required.")
+        return segments
+
     def _toggle_adv_exsim(self):
         """Expands or collapses the Advanced Path Parameters section."""
         self.adv_exsim_expanded = not self.adv_exsim_expanded
@@ -907,6 +1173,18 @@ class ExSimPanel(ctk.CTkFrame):
         for key, ent in self.adv_exsim_inputs.items():
             ent.delete(0, "end")
             ent.insert(0, self._adv_exsim_defaults[key])
+        # Reset GS segments to default (bilinear)
+        for _, _, rf in self._gs_segment_rows:
+            rf.destroy()
+        self._gs_segment_rows = []
+        for r_val, s_val in self._gs_segments_default:
+            self._gs_add_segment(r_val, s_val)
+        # Reset D(R) segments to default (AB06 quadlinear)
+        for _, _, rf in self._dr_segment_rows:
+            rf.destroy()
+        self._dr_segment_rows = []
+        for r_val, d_val in self._dr_segments_default:
+            self._dr_add_segment(r_val, d_val)
         self.islipweight_var.set("Random (1)")
         self._on_islipweight_change("Random (1)")
         self.ent_slip_file.delete(0, "end")
@@ -939,13 +1217,10 @@ class ExSimPanel(ctk.CTkFrame):
             Q0    = float(self.adv_exsim_inputs["Q0"].get())
             eta   = float(self.adv_exsim_inputs["ETA"].get())
             beta  = float(self.adv_exsim_inputs["BETA"].get())
-            GS_R1 = float(self.adv_exsim_inputs["GS_R1"].get())
-            GS_S1 = float(self.adv_exsim_inputs["GS_S1"].get())
-            GS_R2 = float(self.adv_exsim_inputs["GS_R2"].get())
-            GS_S2 = float(self.adv_exsim_inputs["GS_S2"].get())
-        except ValueError:
+            gs_segs = self._get_gs_segments()
+        except ValueError as ve:
             self.help_label.configure(
-                text="Cannot preview — check that all Advanced Path Parameters are valid numbers.",
+                text=f"Cannot preview — {ve}",
                 text_color=res.COLOR_ERROR
             )
             return
@@ -953,14 +1228,32 @@ class ExSimPanel(ctk.CTkFrame):
         # --- DISTANCE ARRAY ---
         R = np.logspace(0, np.log10(300), 300)  # 1 to 300 km
 
-        # --- GEOMETRIC SPREADING GR(R) ---
-        GR = np.zeros_like(R)
-        GR_at_R2 = (GS_R2 / GS_R1) ** GS_S1
-        for i, r in enumerate(R):
-            if r <= GS_R2:
-                GR[i] = (r / GS_R1) ** GS_S1
-            else:
-                GR[i] = GR_at_R2 * (r / GS_R2) ** GS_S2
+        # --- GEOMETRIC SPREADING GR(R) — N segments ---
+        # Each segment i covers distances from R_prev to R_i with slope S_i.
+        # Amplitude is continuous across segment boundaries.
+        def compute_GR(r_arr, segments):
+            GR = np.ones_like(r_arr)
+            r_prev = segments[0][0]   # first cutoff = reference distance
+            GR_boundary = 1.0
+            for seg_i, (r_cut, slope) in enumerate(segments):
+                if seg_i == 0:
+                    # First segment: normalise to 1 at r_prev
+                    mask = r_arr <= r_cut
+                    GR[mask] = (r_arr[mask] / r_prev) ** slope
+                    GR_boundary = (r_cut / r_prev) ** slope
+                else:
+                    r_prev_cut = segments[seg_i - 1][0]
+                    is_last = (seg_i == len(segments) - 1)
+                    if is_last:
+                        mask = r_arr > r_prev_cut
+                    else:
+                        mask = (r_arr > r_prev_cut) & (r_arr <= r_cut)
+                    GR[mask] = GR_boundary * (r_arr[mask] / r_prev_cut) ** slope
+                    if not is_last:
+                        GR_boundary = GR_boundary * (r_cut / r_prev_cut) ** slope
+            return GR
+
+        GR = compute_GR(R, gs_segs)
 
         # --- Q(f) AND COMBINED ATTENUATION ---
         def Q_f(f):
@@ -973,20 +1266,33 @@ class ExSimPanel(ctk.CTkFrame):
         C1  = combined(1.0)
         C10 = combined(10.0)
 
-        # --- PATH DURATION (from .par defaults — piecewise linear) ---
-        # ndur_hinges=2, (0.0, 1.0), (50.0, 10.0), slope=0.05
-        rdur = [0.0, 50.0]
-        dur_vals = [1.0, 10.0]
-        slope_last = 0.05
+        try:
+            dr_segs = self._get_dr_segments()
+        except ValueError as ve:
+            self.help_label.configure(
+                text=f"Cannot preview — {ve}", text_color=res.COLOR_ERROR
+            )
+            return
 
-        def path_dur(r):
-            if r <= rdur[1]:
-                frac = (r - rdur[0]) / (rdur[1] - rdur[0])
-                return dur_vals[0] + frac * (dur_vals[1] - dur_vals[0])
-            else:
-                return dur_vals[1] + slope_last * (r - rdur[1])
+        # --- PATH DURATION D(R) — N segments, linear interpolation ---
+        # Each segment i: from R_prev to R_i, duration grows at rate d_i per km.
+        # D(0) = 0 (path contribution only; source duration added separately by ExSIM).
+        def compute_DR(r_arr, segments):
+            D = np.zeros_like(r_arr)
+            r_prev = 0.0
+            d_accum = 0.0
+            for seg_r, seg_d in segments:
+                mask = (r_arr > r_prev) & (r_arr <= seg_r)
+                D[mask] = d_accum + seg_d * (r_arr[mask] - r_prev)
+                d_accum += seg_d * (seg_r - r_prev)
+                r_prev = seg_r
+            # Beyond last segment: continue with last coefficient
+            last_d = segments[-1][1]
+            mask_beyond = r_arr > segments[-1][0]
+            D[mask_beyond] = d_accum + last_d * (r_arr[mask_beyond] - segments[-1][0])
+            return D
 
-        D = np.array([path_dur(r) for r in R])
+        D = compute_DR(R, dr_segs)
 
         # --- BUILD POPUP WINDOW ---
         win = ctk.CTkToplevel(self.winfo_toplevel())
@@ -1020,9 +1326,12 @@ class ExSimPanel(ctk.CTkFrame):
         param_strip.pack(fill="x")
         param_strip.pack_propagate(False)
 
+        gs_summary = "  →  ".join(
+            f"R{i+1}={r:.0f} km (s={s:.1f})" for i, (r, s) in enumerate(gs_segs)
+        )
         param_text = (
             f"Qmin={Qmin:.0f}  Q0={Q0:.0f}  η={eta:.2f}  β={beta:.2f} km/s  "
-            f"GS: R₁={GS_R1:.0f} km (s={GS_S1:.1f}) → R₂={GS_R2:.0f} km (s={GS_S2:.1f})  "
+            f"GS: {gs_summary}  "
             f"Q(1Hz)={Q_f(1.0):.0f}  Q(10Hz)={Q_f(10.0):.0f}"
         )
         ctk.CTkLabel(
@@ -1111,16 +1420,13 @@ class ExSimPanel(ctk.CTkFrame):
             (
                 "Shows how the duration of strong shaking grows with distance. "
                 "This is the path contribution to total ground motion duration — "
-                "separate from the source duration which depends on magnitude.\n\n"
-                "Modeled as a piecewise linear function defined by hinge points "
-                "(distance, duration) and a final slope:\n"
-                "  D(R) increases linearly between hinges\n"
-                "  Beyond the last hinge: D(R) = D_last + slope × ΔR\n\n"
-                "Longer path duration means shaking lasts longer at greater distances, "
-                "even after amplitude has decayed. "
-                "Values shown use labasin_exsim.par defaults — "
-                "these are not exposed as GUI fields.\n\n"
-                "Source: Boore (2005) SMSIM, Figure 5."
+                "separate from the source duration (which depends on magnitude).\n\n"
+                "Modeled as a piecewise linear function: each segment has a "
+                "growth coefficient d (seconds per km). "
+                "d=0.0 means no growth; d=0.16 means 0.16 s added per km.\n\n"
+                "AB06 uses 4 segments: "
+                "0→10 km (d=0.0), 10→70 km (d=0.16), 70→130 km (d=0.03), >130 km (d=0.04).\n\n"
+                "Source: Atkinson & Boore (2006), Table 1."
             )
         )
 
@@ -1138,11 +1444,16 @@ class ExSimPanel(ctk.CTkFrame):
                 spine.set_edgecolor("#333333")
             ax.grid(True, color="#222222", linewidth=0.5, linestyle="--")
 
-        # Plot 1 — Geometric Spreading
+        # Plot 1 — Geometric Spreading (N segments)
         ax1 = axes[0]
         ax1.loglog(R, GR, color="#5ab4ff", linewidth=2, label="GR(R)")
-        ax1.axvline(GS_R2, color="#ffaa44", linewidth=1,
-                    linestyle="--", label=f"R₂={GS_R2:.0f} km")
+        seg_colors = ["#ffaa44", "#88dd88", "#ff6699", "#aaaaff"]
+        for seg_i, (r_cut, slope) in enumerate(gs_segs):
+            ax1.axvline(
+                r_cut, color=seg_colors[seg_i % len(seg_colors)],
+                linewidth=1, linestyle="--",
+                label=f"R{seg_i+1}={r_cut:.0f} km (s={slope:.1f})"
+            )
         ax1.legend(fontsize=8, facecolor="#1a1a1a",
                    edgecolor="#333333", labelcolor="white")
         style_ax(ax1, "Geometric Spreading GR(R)",
@@ -1159,11 +1470,16 @@ class ExSimPanel(ctk.CTkFrame):
         style_ax(ax2, "Combined Attenuation  GR(R) × exp(−πfR/Qβ)",
                  "Distance (km)", "Amplitude (relative)")
 
-        # Plot 3 — Path Duration
+        # Plot 3 — Path Duration (linear x-axis, N segments)
         ax3 = axes[2]
-        ax3.semilogx(R, D, color="#88dd88", linewidth=2)
-        ax3.axvline(rdur[1], color="#ffaa44", linewidth=1,
-                    linestyle="--", label=f"hinge at {rdur[1]:.0f} km")
+        ax3.plot(R, D, color="#88dd88", linewidth=2)
+        dr_colors = ["#ffaa44", "#88dd88", "#ff6699", "#aaaaff"]
+        for seg_i, (r_cut, d_coeff) in enumerate(dr_segs):
+            ax3.axvline(
+                r_cut, color=dr_colors[seg_i % len(dr_colors)],
+                linewidth=1, linestyle="--",
+                label=f"R{seg_i+1}={r_cut:.0f} km (d={d_coeff:.3f})"
+            )
         ax3.legend(fontsize=8, facecolor="#1a1a1a",
                    edgecolor="#333333", labelcolor="white")
         style_ax(ax3, "Path Duration  D(R)",
@@ -1187,9 +1503,8 @@ class ExSimPanel(ctk.CTkFrame):
         ctk.CTkLabel(
             win,
             text=(
-                "All plots are computed live from the current Advanced Path Parameter values above. "
-                "Change a value in the panel and click Preview again to update. "
-                "Path duration uses labasin_exsim.par internal defaults (not editable in GUI)."
+                "All plots are computed live from the current Advanced Path Parameter values. "
+                "Change a value in the panel and click Preview again to update."
             ),
             font=(res.FONT_LABEL[0], 9),
             text_color="#444444",
@@ -1236,10 +1551,8 @@ class ExSimPanel(ctk.CTkFrame):
             eta  = float(self.adv_exsim_inputs["ETA"].get())
             beta = float(self.adv_exsim_inputs["BETA"].get())
             rho  = float(self.adv_exsim_inputs["RHO"].get())
-            gs_r1 = float(self.adv_exsim_inputs["GS_R1"].get())
-            gs_s1 = float(self.adv_exsim_inputs["GS_S1"].get())
-            gs_r2 = float(self.adv_exsim_inputs["GS_R2"].get())
-            gs_s2 = float(self.adv_exsim_inputs["GS_S2"].get())
+            gs_segs = self._get_gs_segments()
+            dr_segs = self._get_dr_segments()
         except ValueError as e:
             return False, f"Invalid Advanced Path Parameter value: {e}"
 
@@ -1280,18 +1593,32 @@ class ExSimPanel(ctk.CTkFrame):
                 i += 1
                 continue
 
-            # Geometric spreading segment 1: '  R1  slope1'
-            # Identified by the '2' (nseg count) line just before this,
-            # AND a comment containing "r_ref" or "nseg" two lines before —
-            # this distinguishes GS from the path duration section which
-            # also has a '2' followed by two-number pairs but different comments.
-            if re.match(r'^\s*\d+\.?\d*\s+-?\d+\.?\d*\s*$', stripped) \
-                    and i > 0 and lines[i-1].strip() == "2" \
-                    and i > 1 and ("r_ref" in lines[i-2].lower() or "nseg" in lines[i-2].lower()):
-                new_lines.append(f"      {gs_r1} {gs_s1}")
-                # Also write segment 2 on the very next line
-                new_lines.append(f"     {gs_r2} {gs_s2}")
-                i += 2  # skip the original segment 2 line
+            # Geometric spreading — nseg count line + N data lines.
+            # The nseg count line is a single integer preceded by a comment
+            # containing "r_ref" or "nseg". Replace the count and write all
+            # N new segment lines, skipping the original data lines.
+            if re.match(r'^\s*\d+\s*$', stripped) \
+                    and i > 0 \
+                    and ("r_ref" in lines[i-1].lower() or "nseg" in lines[i-1].lower()):
+                original_nseg = int(stripped.strip())
+                n_new = len(gs_segs)
+                new_lines.append(f"      {n_new}")
+                for gs_r, gs_s in gs_segs:
+                    new_lines.append(f"      {gs_r} {gs_s}")
+                i += 1 + original_nseg  # skip nseg count line + original data lines
+                continue
+
+            # Path duration — ndur count line + N data lines.
+            # Identified by a comment containing "duration" on the preceding line.
+            if re.match(r'^\s*\d+\s*$', stripped) \
+                    and i > 0 \
+                    and "duration" in lines[i-1].lower():
+                original_ndur = int(stripped.strip())
+                n_new_dr = len(dr_segs)
+                new_lines.append(f"      {n_new_dr}")
+                for dr_r, dr_d in dr_segs:
+                    new_lines.append(f"      {dr_r}  {dr_d}")
+                i += 1 + original_ndur
                 continue
 
             # islipweight value line: single integer (-1, 0, or 1),
@@ -1453,6 +1780,52 @@ class ExSimPanel(ctk.CTkFrame):
         src_lines.append("\n")
         src_lines.append("# --- SIMULATION METHOD (at time of run) ---\n")
         src_lines.append("# METHOD = EXSIM\n")
+
+        # --- EXSIM PATH PARAMETERS SNAPSHOT ---
+        # Saved as comments — BBP ignores # lines, ResultsPanel reads them back.
+        src_lines.append("\n")
+        src_lines.append("# --- EXSIM PATH PARAMETERS (at time of run) ---\n")
+
+        if self.adv_exsim_expanded:
+            try:
+                snap_segs = self._get_gs_segments()
+            except ValueError:
+                snap_segs = list(self._gs_segments_default)
+            src_lines.append("# EXSIM_PARAMS_SOURCE = USER\n")
+            src_lines.append(f"# EXSIM_QMIN = {self.adv_exsim_inputs['QMIN'].get()}\n")
+            src_lines.append(f"# EXSIM_Q0   = {self.adv_exsim_inputs['Q0'].get()}\n")
+            src_lines.append(f"# EXSIM_ETA  = {self.adv_exsim_inputs['ETA'].get()}\n")
+            src_lines.append(f"# EXSIM_BETA = {self.adv_exsim_inputs['BETA'].get()}\n")
+            src_lines.append(f"# EXSIM_RHO  = {self.adv_exsim_inputs['RHO'].get()}\n")
+        else:
+            snap_segs = [(float(r), float(s)) for r, s in self._gs_segments_default]
+            src_lines.append("# EXSIM_PARAMS_SOURCE = DEFAULT\n")
+            src_lines.append(f"# EXSIM_QMIN = {self._adv_exsim_defaults['QMIN']}\n")
+            src_lines.append(f"# EXSIM_Q0   = {self._adv_exsim_defaults['Q0']}\n")
+            src_lines.append(f"# EXSIM_ETA  = {self._adv_exsim_defaults['ETA']}\n")
+            src_lines.append(f"# EXSIM_BETA = {self._adv_exsim_defaults['BETA']}\n")
+            src_lines.append(f"# EXSIM_RHO  = {self._adv_exsim_defaults['RHO']}\n")
+
+        # Save GS segments: EXSIM_GS_NSEG then one line per segment
+        src_lines.append(f"# EXSIM_GS_NSEG = {len(snap_segs)}\n")
+        for seg_i, (r_val, s_val) in enumerate(snap_segs):
+            src_lines.append(f"# EXSIM_GS_SEG{seg_i+1} = {r_val} {s_val}\n")
+
+        # Save D(R) segments: EXSIM_DR_NSEG then one line per segment
+        try:
+            dr_snap_segs = self._get_dr_segments() if self.adv_exsim_expanded \
+                           else [(float(r), float(d)) for r, d in self._dr_segments_default]
+        except ValueError:
+            dr_snap_segs = [(float(r), float(d)) for r, d in self._dr_segments_default]
+        src_lines.append(f"# EXSIM_DR_NSEG = {len(dr_snap_segs)}\n")
+        for seg_i, (r_val, d_val) in enumerate(dr_snap_segs):
+            src_lines.append(f"# EXSIM_DR_SEG{seg_i+1} = {r_val} {d_val}\n")
+
+        # islipweight
+        slip_mode_snap = self.islipweight_var.get() if hasattr(self, "islipweight_var") else "Random (1)"
+        islip_map = {"Uniform (-1)": "-1", "From file (0)": "0", "Random (1)": "1"}
+        src_lines.append(f"# EXSIM_ISLIPWEIGHT = {islip_map.get(slip_mode_snap, '1')}\n")
+
         src_content = "".join(src_lines)
 
         # --- BUILD .stl CONTENT ---

@@ -164,6 +164,59 @@ class ResultsPanel(ctk.CTkToplevel):
 
         return snapshot
 
+    def _read_exsim_params_snapshot(self, src_content):
+        """
+        Parses EXSIM path parameter comments from the .src file.
+        Returns a dict with scalar keys and a special 'GS_SEGMENTS' key
+        containing a list of (R_km, slope) tuples for N-segment display.
+        """
+        snap = {}
+        if not src_content:
+            return snap
+
+        for raw_line in src_content.splitlines():
+            line = raw_line.strip()
+            if not line.startswith("#") or "=" not in line:
+                continue
+            body = line.lstrip("#").strip()
+            if not body.startswith("EXSIM_"):
+                continue
+            key, _, val = body.partition("=")
+            key = key.strip()
+            val = val.strip()
+            if key and val:
+                snap[key] = val
+
+        # Parse GS segments from EXSIM_GS_NSEG + EXSIM_GS_SEGn keys
+        try:
+            nseg = int(snap.get("EXSIM_GS_NSEG", "0"))
+            segs = []
+            for seg_i in range(1, nseg + 1):
+                seg_str = snap.get(f"EXSIM_GS_SEG{seg_i}", "")
+                parts = seg_str.split()
+                if len(parts) == 2:
+                    segs.append((parts[0], parts[1]))
+            if segs:
+                snap["GS_SEGMENTS"] = segs
+        except (ValueError, KeyError):
+            pass
+
+        # Parse D(R) segments from EXSIM_DR_NSEG + EXSIM_DR_SEGn keys
+        try:
+            ndur = int(snap.get("EXSIM_DR_NSEG", "0"))
+            dr_segs = []
+            for seg_i in range(1, ndur + 1):
+                seg_str = snap.get(f"EXSIM_DR_SEG{seg_i}", "")
+                parts = seg_str.split()
+                if len(parts) == 2:
+                    dr_segs.append((parts[0], parts[1]))
+            if dr_segs:
+                snap["DR_SEGMENTS"] = dr_segs
+        except (ValueError, KeyError):
+            pass
+
+        return snap
+
     def _detect_simulation_method(self):
         """
         Returns "GP", "EXSIM", or "UNKNOWN".
@@ -964,6 +1017,138 @@ class ResultsPanel(ctk.CTkToplevel):
                         text_color=status_colors.get(tag, "white"),
                         anchor="w"
                     ).grid(row=0, column=2, padx=12, pady=5, sticky="ew")
+
+        # --- EXSIM PATH PARAMETERS ---
+        if self._is_exsim:
+            exsim_snap = self._read_exsim_params_snapshot(src_content if ok_src else "")
+            if exsim_snap:
+                _section_label(scroll, "ExSIM Path Parameters")
+                exsim_frame = ctk.CTkFrame(
+                    scroll, fg_color="#222222",
+                    border_width=1, border_color="#444", corner_radius=6
+                )
+                exsim_frame.pack(fill="x", pady=(0, 12))
+
+                # Source badge
+                params_source = exsim_snap.get("EXSIM_PARAMS_SOURCE", "")
+                if params_source:
+                    badge_color = "#2a4a2a" if params_source == "USER" else "#333333"
+                    badge_text  = "Custom values (Advanced Path Parameters)" \
+                                  if params_source == "USER" else "Default labasin_exsim.par values"
+                    badge_row = ctk.CTkFrame(exsim_frame, fg_color=badge_color, corner_radius=0)
+                    badge_row.pack(fill="x")
+                    ctk.CTkLabel(
+                        badge_row, text=badge_text,
+                        font=(res.FONT_LABEL[0], 10, "bold"),
+                        text_color="#aaffaa" if params_source == "USER" else "#aaaaaa",
+                        anchor="w"
+                    ).pack(padx=12, pady=4, anchor="w")
+
+                # Header
+                hdr_e = ctk.CTkFrame(exsim_frame, fg_color="#111122", corner_radius=0)
+                hdr_e.pack(fill="x")
+                hdr_e.grid_columnconfigure((0, 1), weight=1, uniform="ec")
+                for col, txt in enumerate(["Parameter", "Value"]):
+                    ctk.CTkLabel(
+                        hdr_e, text=txt,
+                        font=(res.FONT_LABEL[0], 11, "bold"),
+                        text_color=res.COLOR_PRIMARY, anchor="w"
+                    ).grid(row=0, column=col, padx=12, pady=6, sticky="ew")
+
+                # Scalar params
+                scalar_rows = [
+                    ("EXSIM_QMIN", "Quality Factor — Qmin"),
+                    ("EXSIM_Q0",   "Quality Factor — Q0"),
+                    ("EXSIM_ETA",  "Quality Factor — η (eta)"),
+                    ("EXSIM_BETA", "Shear-wave velocity β (km/s)"),
+                    ("EXSIM_RHO",  "Crustal density ρ (g/cm³)"),
+                ]
+                islip_labels = {"-1": "-1  (Uniform)", "0": "0  (From file)", "1": "1  (Random)"}
+
+                for row_i, (snap_key, label) in enumerate(scalar_rows):
+                    val = exsim_snap.get(snap_key)
+                    if val is None:
+                        continue
+                    row_bg = "#1a1a1a" if row_i % 2 == 0 else "#222222"
+                    rf = ctk.CTkFrame(exsim_frame, fg_color=row_bg, corner_radius=0)
+                    rf.pack(fill="x")
+                    rf.grid_columnconfigure((0, 1), weight=1, uniform="ec")
+                    ctk.CTkLabel(rf, text=label, font=(res.FONT_LABEL[0], 11),
+                                 text_color="#cccccc", anchor="w"
+                                 ).grid(row=0, column=0, padx=12, pady=5, sticky="ew")
+                    ctk.CTkLabel(rf, text=val, font=("Courier", 11),
+                                 text_color="white", anchor="w"
+                                 ).grid(row=0, column=1, padx=12, pady=5, sticky="ew")
+
+                # GS segments
+                gs_segs = exsim_snap.get("GS_SEGMENTS", [])
+                if gs_segs:
+                    gs_hdr = ctk.CTkFrame(exsim_frame, fg_color="#1a1a2a", corner_radius=0)
+                    gs_hdr.pack(fill="x")
+                    gs_hdr.grid_columnconfigure((0, 1, 2), weight=1, uniform="ec3")
+                    for col, txt in enumerate(["Geometric Spreading — Segment", "Distance cutoff (km)", "Slope"]):
+                        ctk.CTkLabel(gs_hdr, text=txt,
+                                     font=(res.FONT_LABEL[0], 10, "bold"),
+                                     text_color="#aaaaff", anchor="w"
+                                     ).grid(row=0, column=col, padx=12, pady=5, sticky="ew")
+                    for seg_i, (r_val, s_val) in enumerate(gs_segs):
+                        row_bg = "#1a1a1a" if seg_i % 2 == 0 else "#222222"
+                        rf2 = ctk.CTkFrame(exsim_frame, fg_color=row_bg, corner_radius=0)
+                        rf2.pack(fill="x")
+                        rf2.grid_columnconfigure((0, 1, 2), weight=1, uniform="ec3")
+                        ctk.CTkLabel(rf2, text=f"Segment {seg_i+1}",
+                                     font=(res.FONT_LABEL[0], 11),
+                                     text_color="#cccccc", anchor="w"
+                                     ).grid(row=0, column=0, padx=12, pady=5, sticky="ew")
+                        ctk.CTkLabel(rf2, text=r_val, font=("Courier", 11),
+                                     text_color="white", anchor="w"
+                                     ).grid(row=0, column=1, padx=12, pady=5, sticky="ew")
+                        ctk.CTkLabel(rf2, text=s_val, font=("Courier", 11),
+                                     text_color="white", anchor="w"
+                                     ).grid(row=0, column=2, padx=12, pady=5, sticky="ew")
+
+                # D(R) segments
+                dr_segs_disp = exsim_snap.get("DR_SEGMENTS", [])
+                if dr_segs_disp:
+                    dr_hdr = ctk.CTkFrame(exsim_frame, fg_color="#1a2a1a", corner_radius=0)
+                    dr_hdr.pack(fill="x")
+                    dr_hdr.grid_columnconfigure((0, 1, 2), weight=1, uniform="ec3d")
+                    for col, txt in enumerate(["Path Duration D(R) — Segment", "Distance cutoff (km)", "Coeff d"]):
+                        ctk.CTkLabel(dr_hdr, text=txt,
+                                     font=(res.FONT_LABEL[0], 10, "bold"),
+                                     text_color="#88dd88", anchor="w"
+                                     ).grid(row=0, column=col, padx=12, pady=5, sticky="ew")
+                    for seg_i, (r_val, d_val) in enumerate(dr_segs_disp):
+                        row_bg = "#1a1a1a" if seg_i % 2 == 0 else "#222222"
+                        rf_dr = ctk.CTkFrame(exsim_frame, fg_color=row_bg, corner_radius=0)
+                        rf_dr.pack(fill="x")
+                        rf_dr.grid_columnconfigure((0, 1, 2), weight=1, uniform="ec3d")
+                        ctk.CTkLabel(rf_dr, text=f"Segment {seg_i+1}",
+                                     font=(res.FONT_LABEL[0], 11),
+                                     text_color="#cccccc", anchor="w"
+                                     ).grid(row=0, column=0, padx=12, pady=5, sticky="ew")
+                        ctk.CTkLabel(rf_dr, text=r_val, font=("Courier", 11),
+                                     text_color="white", anchor="w"
+                                     ).grid(row=0, column=1, padx=12, pady=5, sticky="ew")
+                        ctk.CTkLabel(rf_dr, text=d_val, font=("Courier", 11),
+                                     text_color="white", anchor="w"
+                                     ).grid(row=0, column=2, padx=12, pady=5, sticky="ew")
+
+                # islipweight
+                islip_val = exsim_snap.get("EXSIM_ISLIPWEIGHT")
+                if islip_val is not None:
+                    row_bg = "#1a1a1a" if len(gs_segs) % 2 == 0 else "#222222"
+                    rf3 = ctk.CTkFrame(exsim_frame, fg_color=row_bg, corner_radius=0)
+                    rf3.pack(fill="x")
+                    rf3.grid_columnconfigure((0, 1), weight=1, uniform="ec")
+                    ctk.CTkLabel(rf3, text="Slip weighting (islipweight)",
+                                 font=(res.FONT_LABEL[0], 11),
+                                 text_color="#cccccc", anchor="w"
+                                 ).grid(row=0, column=0, padx=12, pady=5, sticky="ew")
+                    ctk.CTkLabel(rf3, text=islip_labels.get(islip_val, islip_val),
+                                 font=("Courier", 11),
+                                 text_color="white", anchor="w"
+                                 ).grid(row=0, column=1, padx=12, pady=5, sticky="ew")
 
         _section_label(scroll, "Linked Files")
         links_frame = ctk.CTkFrame(

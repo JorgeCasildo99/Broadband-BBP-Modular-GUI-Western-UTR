@@ -1011,8 +1011,8 @@ class StationDetailPanel(ctk.CTkToplevel):
             f_min, f_max = 0.1, 20.0
 
             fig, (ax1, ax2) = plt.subplots(
-                2, 1, figsize=(10, 8), facecolor="#111111",
-                gridspec_kw={"height_ratios": [1.6, 1], "hspace": 0.45}
+                1, 2, figsize=(13, 5), facecolor="#111111",
+                gridspec_kw={"wspace": 0.35}
             )
 
             for ax in (ax1, ax2):
