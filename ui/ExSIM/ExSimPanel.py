@@ -360,6 +360,73 @@ class ExSimPanel(ctk.CTkFrame):
         for r_val, s_val in self._gs_segments_default:
             self._gs_add_segment(r_val, s_val)
 
+        # ── GS INFO CARD ──
+        gs_info_frame = ctk.CTkFrame(
+            self.adv_exsim_content,
+            fg_color="#1a1a2a",
+            border_width=1,
+            border_color="#2a2a4a",
+            corner_radius=6
+        )
+        gs_info_frame.pack(fill="x", padx=12, pady=(6, 4))
+
+        ctk.CTkLabel(
+            gs_info_frame,
+            text="What does Geometric Spreading control?",
+            font=(res.FONT_LABEL[0], 10, "bold"),
+            text_color="#8899dd",
+            anchor="w"
+        ).pack(anchor="w", padx=10, pady=(8, 2))
+
+        gs_info_lines = [
+            ("Amplitude decay",
+             "Controls how fast ground motion amplitude drops with distance. "
+             "A slope of −1.0 means amplitude halves every time distance doubles "
+             "(body wave behaviour, typical close to the source). "
+             "A slope of −0.5 means slower decay (surface wave / Lg behaviour, "
+             "typical at larger distances)."),
+            ("Moho bounce (+0.2)",
+             "In ENA, between ~70–140 km, amplitudes can temporarily increase "
+             "because seismic waves reflect off the base of the crust (the Moho). "
+             "AB06 models this as a positive slope segment (+0.2). "
+             "This is why ENA earthquakes are felt much farther than California events."),
+            ("Segments",
+             "Each segment defines a distance range and the decay rate within it. "
+             "Add segments to build the bilinear (2), trilinear (3, AB06 standard), "
+             "or any N-segment model you need. "
+             "The amplitude is continuous — each segment picks up exactly where the previous one left off."),
+            ("ENA vs California",
+             "California uses approximately −1.0 for all distances. "
+             "ENA uses a steeper −1.3 close in, then the Moho bounce, then −0.5 far out. "
+             "Using the wrong model for your region will over- or under-predict amplitudes "
+             "at all distances."),
+        ]
+
+        for title, explanation in gs_info_lines:
+            row = ctk.CTkFrame(gs_info_frame, fg_color="transparent")
+            row.pack(fill="x", padx=10, pady=(2, 4))
+
+            ctk.CTkLabel(
+                row,
+                text=f"• {title}:",
+                font=(res.FONT_LABEL[0], 9, "bold"),
+                text_color="#aaaacc",
+                anchor="w",
+                width=120
+            ).pack(side="left", anchor="n")
+
+            ctk.CTkLabel(
+                row,
+                text=explanation,
+                font=(res.FONT_LABEL[0], 9),
+                text_color="#777788",
+                wraplength=260,
+                justify="left",
+                anchor="w"
+            ).pack(side="left", anchor="n", pady=(0, 2))
+
+        ctk.CTkFrame(gs_info_frame, fg_color="transparent", height=4).pack()
+
         # ── PATH DURATION — dynamic multi-segment UI ──
         ctk.CTkLabel(
             self.adv_exsim_content,
@@ -401,6 +468,78 @@ class ExSimPanel(ctk.CTkFrame):
         # Build default D(R) segments
         for r_val, d_val in self._dr_segments_default:
             self._dr_add_segment(r_val, d_val)
+
+        # ── D(R) INFO CARD ──
+        dr_info_frame = ctk.CTkFrame(
+            self.adv_exsim_content,
+            fg_color="#1a2a1a",
+            border_width=1,
+            border_color="#2a3a2a",
+            corner_radius=6
+        )
+        dr_info_frame.pack(fill="x", padx=12, pady=(6, 4))
+
+        ctk.CTkLabel(
+            dr_info_frame,
+            text="What does Path Duration control?",
+            font=(res.FONT_LABEL[0], 10, "bold"),
+            text_color="#88cc88",
+            anchor="w"
+        ).pack(anchor="w", padx=10, pady=(8, 2))
+
+        dr_info_lines = [
+            ("What it is",
+             "Path duration is how much longer the shaking lasts because of the "
+             "travel path — on top of the source duration (which depends on magnitude). "
+             "Scattered and reflected waves arrive at the site after the direct wave, "
+             "stretching the total signal window."),
+            ("Coefficient d",
+             "Each segment has a coefficient d (seconds per km). "
+             "d = 0.0 means duration does not grow in that distance range. "
+             "d = 0.16 means shaking lasts 0.16 seconds longer for every extra km of distance. "
+             "Higher d = longer shaking at farther stations."),
+            ("Why segments?",
+             "Duration does not grow at a constant rate with distance. "
+             "Close in (0–10 km) the path adds almost nothing. "
+             "Between 10–70 km it grows fast as scattered waves accumulate. "
+             "Beyond 70 km growth slows because the wavefield becomes more diffuse. "
+             "AB06 uses 4 segments to capture this behaviour."),
+            ("Effect on simulations",
+             "Longer duration increases the energy in the simulated signal "
+             "and affects the FAS at low frequencies and the response spectra at long periods. "
+             "Underestimating duration will make far-field simulations look too short and spiky. "
+             "Overestimating it will spread energy over too long a window and underpredict peaks."),
+            ("ENA vs California",
+             "ENA has longer path duration than California at the same distance — "
+             "the rigid, low-attenuation crust keeps scattered waves bouncing around "
+             "much longer. This is one reason ENA earthquakes cause felt shaking "
+             "hundreds of kilometres from the epicentre."),
+        ]
+
+        for title, explanation in dr_info_lines:
+            row = ctk.CTkFrame(dr_info_frame, fg_color="transparent")
+            row.pack(fill="x", padx=10, pady=(2, 4))
+
+            ctk.CTkLabel(
+                row,
+                text=f"• {title}:",
+                font=(res.FONT_LABEL[0], 9, "bold"),
+                text_color="#aaccaa",
+                anchor="w",
+                width=120
+            ).pack(side="left", anchor="n")
+
+            ctk.CTkLabel(
+                row,
+                text=explanation,
+                font=(res.FONT_LABEL[0], 9),
+                text_color="#778877",
+                wraplength=260,
+                justify="left",
+                anchor="w"
+            ).pack(side="left", anchor="n", pady=(0, 2))
+
+        ctk.CTkFrame(dr_info_frame, fg_color="transparent", height=4).pack()
 
         # Reset button
         reset_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
