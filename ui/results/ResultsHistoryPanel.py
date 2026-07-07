@@ -30,10 +30,11 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
     Clicking a completed session opens the ResultsPanel.
     """
 
-    def __init__(self, master, on_open_results=None):
+    def __init__(self, master, on_open_results=None, on_edit_run=None):
         super().__init__(master)
 
         self._on_open_results = on_open_results
+        self._on_edit_run     = on_edit_run
         self._sessions        = []
 
         self.title("BBP Session History")
@@ -126,15 +127,21 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
         hdr = ctk.CTkFrame(self, fg_color="#1a1a3a", corner_radius=0, height=36)
         hdr.pack(fill="x", padx=20)
         hdr.pack_propagate(False)
-        hdr.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
+        hdr.grid_columnconfigure(0, weight=0, minsize=110)   # Run ID
+        hdr.grid_columnconfigure(1, weight=0, minsize=180)   # Date
+        hdr.grid_columnconfigure(2, weight=1)                # Experimenter / Experiment
+        hdr.grid_columnconfigure(3, weight=0, minsize=100)   # Stations
+        hdr.grid_columnconfigure(4, weight=0, minsize=130)   # Profile
+        hdr.grid_columnconfigure(5, weight=0, minsize=220)   # Action
 
         headers = ["Run ID", "Date", "Experimenter / Experiment", "Stations", "Profile", "Action"]
         for i, h in enumerate(headers):
+            anchor = "e" if i == 5 else "w"
             ctk.CTkLabel(
                 hdr, text=h,
                 font=(res.FONT_LABEL[0], 11, "bold"),
                 text_color=res.COLOR_PRIMARY
-            ).grid(row=0, column=i, padx=12, pady=8, sticky="w")
+            ).grid(row=0, column=i, padx=12, pady=8, sticky=anchor)
 
         # --- SCROLLABLE SESSION LIST ---
         self.session_scroll = ctk.CTkScrollableFrame(
@@ -584,7 +591,12 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
         )
         row.pack(fill="x", pady=3)
         row.pack_propagate(False)
-        row.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
+        row.grid_columnconfigure(0, weight=0, minsize=110)   # Run ID
+        row.grid_columnconfigure(1, weight=0, minsize=180)   # Date
+        row.grid_columnconfigure(2, weight=1)                # Experimenter / Experiment
+        row.grid_columnconfigure(3, weight=0, minsize=100)   # Stations
+        row.grid_columnconfigure(4, weight=0, minsize=130)   # Profile
+        row.grid_columnconfigure(5, weight=0, minsize=220)   # Action
 
         # Run ID
         ctk.CTkLabel(
@@ -684,7 +696,7 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             text_color=profile_color
         ).grid(row=0, column=4, padx=12, pady=15, sticky="w")
 
-        # --- BUTTON GROUP: View Results + Delete ---
+        # --- BUTTON GROUP: View Results + Edit + Delete ---
         btn_frame = ctk.CTkFrame(row, fg_color="transparent")
         btn_frame.grid(row=0, column=5, padx=12, pady=10, sticky="e")
 
@@ -697,6 +709,21 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             font=(res.FONT_LABEL[0], 11),
             command=lambda s=session: self._open_session(s)
         ).pack(side="left", padx=(0, 4))
+
+        # Edit button — scenario runs only (not validation)
+        if not is_val and self._on_edit_run:
+            ctk.CTkButton(
+                btn_frame,
+                text="Edit",
+                width=60, height=32,
+                fg_color="#1a3a1a",
+                hover_color="#2a5a2a",
+                border_width=1,
+                border_color="#336633",
+                text_color="#88dd88",
+                font=(res.FONT_LABEL[0], 11),
+                command=lambda s=session: self._edit_session(s)
+            ).pack(side="left", padx=(0, 4))
 
         ctk.CTkButton(
             btn_frame,
@@ -921,6 +948,144 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
     # ------------------------------------------------------------------
     # OPEN SESSION
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # EDIT (re-simulate) a previous run
+    # ------------------------------------------------------------------
+
+    def _edit_session(self, session):
+        """
+        Reads the .src and .stl from indata/<run_id>/, parses them into
+        a dict, then calls on_edit_run(method, params_dict, stations).
+        Closes the history window so the user lands on the correct panel
+        with all fields pre-filled.
+        """
+        run_id = session.get("run_id", "")
+        method = session.get("sim_method", "UNKNOWN")
+
+        if method not in ("GP", "EXSIM"):
+            import tkinter.messagebox as mb
+            mb.showwarning(
+                "Cannot Edit",
+                f"Run {run_id}: simulation method '{method}' is not supported for editing yet.",
+                parent=self
+            )
+            return
+
+        # --- Read .src ---
+        ok_src, src_content = WSLBridge.read_src_file(run_id)
+        if not ok_src or not src_content:
+            import tkinter.messagebox as mb
+            mb.showerror(
+                "Cannot Edit",
+                f"Could not read .src file for run {run_id}.\n"
+                "The indata folder may have been deleted.",
+                parent=self
+            )
+            return
+
+        # --- Read .stl ---
+        ok_stl, stl_content = WSLBridge.read_stl_file(run_id)
+
+        # --- Parse .src ---
+        params = self._parse_src_for_edit(src_content)
+
+        # --- Parse .stl into station list [(lon, lat, name), ...] ---
+        stations = []
+        if ok_stl and stl_content:
+            for line in stl_content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 3:
+                    try:
+                        stations.append((float(parts[0]), float(parts[1]), parts[2]))
+                    except ValueError:
+                        pass
+                elif len(parts) == 2:
+                    try:
+                        stations.append((float(parts[0]), float(parts[1]), f"STA{len(stations)+1}"))
+                    except ValueError:
+                        pass
+
+        # --- Build a suggested new experiment name ---
+        exp_name = session.get("exp_name", f"run_{run_id}")
+        # Strip any trailing _N suffix so we start fresh numbering
+        import re as _re
+        base = _re.sub(r'_\d+$', '', exp_name)
+        params["_suggested_exp_name"] = base
+
+        # --- Fire callback and close ---
+        if self._on_edit_run:
+            self._on_edit_run(method, params, stations)
+        self.destroy()
+
+    def _parse_src_for_edit(self, src_content):
+        """
+        Parses a BBP .src file and returns a flat dict of all parameters
+        needed to pre-fill GP or ExSIM panels.
+
+        Handles both:
+          KEY = VALUE          (standard BBP keys)
+          # EXSIM_KEY = VALUE  (ExSIM path parameter snapshot)
+          # KEY = VALUE [TAG]  (GP advanced parameter snapshot)
+        """
+        import re as _re
+        params = {}
+
+        for raw_line in src_content.splitlines():
+            line = raw_line.strip()
+
+            # Skip blank lines and pure comment lines that aren't snapshots
+            if not line:
+                continue
+
+            # --- Standard BBP key = value (non-comment) ---
+            if not line.startswith("#"):
+                if "=" in line:
+                    key, _, val = line.partition("=")
+                    key = key.strip().upper()
+                    val = val.split("#")[0].strip()  # strip inline comments
+                    if key and val:
+                        params[key] = val
+                continue
+
+            # --- Comment lines: check for snapshots ---
+            body = line.lstrip("#").strip()
+            if "=" not in body:
+                continue
+
+            # ExSIM path parameter snapshot: "EXSIM_KEY = value"
+            if body.upper().startswith("EXSIM_"):
+                key, _, val = body.partition("=")
+                key = key.strip().upper()
+                val = val.strip()
+                if key and val:
+                    params[key] = val
+                continue
+
+            # METHOD marker
+            if body.upper().startswith("METHOD"):
+                key, _, val = body.partition("=")
+                params["_METHOD"] = val.strip().upper()
+                continue
+
+            # GP Advanced Parameter snapshot: "KEY = value [TAG]"
+            # Tag is ACTIVE or BBP_DEFAULT, optional
+            m = _re.match(
+                r'^(CODEBASE_GP_\w+)\s*=\s*([^\[]+?)(?:\s*\[.*\])?\s*$',
+                body, _re.IGNORECASE
+            )
+            if m:
+                key = m.group(1).strip().upper()
+                val = m.group(2).strip()
+                params[key] = val
+
+            # GS and DR segments: "EXSIM_GS_SEG1 = R slope" etc.
+            # (Already handled above by EXSIM_ prefix)
+
+        return params
 
     def _open_comparison(self):
         """Opens the ComparisonPanel directly from the history panel."""

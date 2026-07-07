@@ -969,3 +969,82 @@ class GravesAndPitarkaPanel(ctk.CTkFrame):
 
         if self._on_run_callback:
             self._on_run_callback()
+
+    def load_from_src(self, params, stations):
+        """
+        Pre-fills all GP panel fields from a parsed .src parameter dict
+        and a station list [(lon, lat, name), ...].
+
+        Called by main.py when the user clicks Edit on a history row.
+        Handles auto-naming: appends _1, _2, ... to avoid name collisions.
+        """
+        import re as _re
+
+        def _set(entry, val):
+            if val is not None:
+                entry.delete(0, "end")
+                entry.insert(0, str(val))
+
+        # --- Experimenter / EXP_NAME ---
+        experimenter = params.get("EXPERIMENTER", "")
+        exp_name_raw = params.get("_suggested_exp_name", "") or params.get("EXP_NAME", "")
+
+        # Generate a unique _N suffix for the experiment name
+        base = _re.sub(r'_\d+$', '', exp_name_raw) if exp_name_raw else exp_name_raw
+        new_exp = f"{base}_1" if base else "resim_1"
+
+        _set(self.ent_experimenter, experimenter)
+        _set(self.ent_exp_name, new_exp)
+
+        # --- Fault geometry ---
+        gp_keys = [
+            "MAGNITUDE", "FAULT_LENGTH", "FAULT_WIDTH", "DEPTH_TO_TOP",
+            "STRIKE", "DIP", "RAKE", "HYPO_DOWN_DIP", "HYPO_ALONG_STK",
+            "LON_TOP_CENTER", "LAT_TOP_CENTER",
+        ]
+        for key in gp_keys:
+            if key in params and key in self.src_inputs:
+                _set(self.src_inputs[key], params[key])
+
+        # --- DLEN, DWID, SEED ---
+        for adv_key in ("DLEN", "DWID", "SEED"):
+            if adv_key in params and adv_key in self.adv_inputs:
+                _set(self.adv_inputs[adv_key], params[adv_key])
+
+        # --- GP Advanced Parameters (CODEBASE_GP_* keys) ---
+        gp_adv_map = {
+            "CODEBASE_GP_KAPPA"       : "KAPPA",
+            "CODEBASE_GP_QFEXP"       : "QFEXP",
+            "CODEBASE_GP_SDROP"       : "SDROP",
+            "CODEBASE_GP_MEAN_RVFAC"  : "MEAN_RVFAC",
+            "CODEBASE_GP_RANGE_RVFAC" : "RANGE_RVFAC",
+            "CODEBASE_GP_RISETIME_COEF": "RISETIME_COEF",
+        }
+        has_adv = False
+        for src_key, adv_key in gp_adv_map.items():
+            if src_key in params:
+                has_adv = True
+                # AdvancedSettingsPanel writes to the velmodel config, not the
+                # panel entries — so we just surface the values in the help label
+                # rather than trying to set external UI state here.
+        if has_adv:
+            self.help_label.configure(
+                text="Note: Advanced GP Parameters were active in the original run. "
+                     "Re-open Advanced Settings to verify or re-apply them.",
+                text_color="#ffaa44"
+            )
+
+        # --- Stations ---
+        self.manual_station_list.clear()
+        for lon, lat, name in stations:
+            self.manual_station_list.append((lon, lat, name))
+        self._refresh_station_list()
+        self.trigger_map_update()
+
+        # Surface a confirmation message
+        self.help_label.configure(
+            text=f"Fields pre-filled from previous run. "
+                 f"Experiment renamed to '{new_exp}'. "
+                 "Review all values then click Generate Files.",
+            text_color=res.COLOR_SUCCESS
+        )

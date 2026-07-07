@@ -243,7 +243,8 @@ class MainPanel(ctk.CTk):
         """Opens the ResultsHistoryPanel as a full window from the Dashboard."""
         ResultsHistoryPanel(
             master          = self,
-            on_open_results = self.show_results_panel
+            on_open_results = self.show_results_panel,
+            on_edit_run     = self.open_run_for_edit
         )
 
     def open_configuration_panel(self):
@@ -437,6 +438,25 @@ class MainPanel(ctk.CTk):
         Opens ResultsPanel as a full window.
         """
         ResultsPanel(self)
+
+    # ------------------------------------------------------------------
+    # EDIT / RE-SIMULATE A PREVIOUS RUN
+    # ------------------------------------------------------------------
+
+    def open_run_for_edit(self, method, params, stations):
+        """
+        Called by ResultsHistoryPanel when the user clicks Edit on a run.
+        Navigates to the correct method panel and pre-fills all fields.
+        """
+        if method == "GP":
+            self.show_rupture_module()
+            # gp_module is set by show_rupture_module
+            if hasattr(self, "gp_module") and self.gp_module:
+                self.gp_module.load_from_src(params, stations)
+        elif method == "EXSIM":
+            self.show_exsim_module()
+            if hasattr(self, "exsim_module") and self.exsim_module:
+                self.exsim_module.load_from_src(params, stations)
 
     # ------------------------------------------------------------------
     # ERROR HANDLING

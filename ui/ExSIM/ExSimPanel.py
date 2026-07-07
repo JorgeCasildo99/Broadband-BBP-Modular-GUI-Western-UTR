@@ -2052,3 +2052,108 @@ class ExSimPanel(ctk.CTkFrame):
         AppConfig.simulation_method = "EXSIM"
         if self._on_run_callback:
             self._on_run_callback()
+
+    def load_from_src(self, params, stations):
+        """
+        Pre-fills all ExSIM panel fields from a parsed .src parameter dict
+        and a station list [(lon, lat, name), ...].
+
+        Restores: fault geometry, SEED, experimenter/exp name,
+        Advanced Path Parameters (Q, beta, rho, G(R) segments, D(R) segments,
+        islipweight) from the EXSIM_* snapshot stored in the .src comments.
+        """
+        import re as _re
+
+        def _set(entry, val):
+            if val is not None:
+                entry.delete(0, "end")
+                entry.insert(0, str(val))
+
+        # --- Experimenter / EXP_NAME ---
+        experimenter = params.get("EXPERIMENTER", "")
+        exp_name_raw = params.get("_suggested_exp_name", "") or params.get("EXP_NAME", "")
+        base = _re.sub(r'_\d+$', '', exp_name_raw) if exp_name_raw else exp_name_raw
+        new_exp = f"{base}_1" if base else "resim_1"
+
+        _set(self.ent_experimenter, experimenter)
+        _set(self.ent_exp_name, new_exp)
+
+        # --- Fault geometry ---
+        exsim_keys = [
+            "MAGNITUDE", "FAULT_LENGTH", "FAULT_WIDTH", "DEPTH_TO_TOP",
+            "STRIKE", "DIP", "RAKE", "HYPO_DOWN_DIP", "HYPO_ALONG_STK",
+            "LON_TOP_CENTER", "LAT_TOP_CENTER",
+        ]
+        for key in exsim_keys:
+            if key in params and key in self.src_inputs:
+                _set(self.src_inputs[key], params[key])
+
+        # --- SEED ---
+        if "SEED" in params:
+            _set(self.ent_seed, params["SEED"])
+
+        # --- Advanced Path Parameters from EXSIM_* snapshot ---
+        adv_key_map = {
+            "EXSIM_QMIN" : "QMIN",
+            "EXSIM_Q0"   : "Q0",
+            "EXSIM_ETA"  : "ETA",
+            "EXSIM_BETA" : "BETA",
+            "EXSIM_RHO"  : "RHO",
+        }
+        has_adv_snapshot = any(k in params for k in adv_key_map)
+
+        if has_adv_snapshot:
+            # Expand the Advanced Path Parameters section
+            if not self.adv_exsim_expanded:
+                self._toggle_adv_exsim()
+
+            for snap_key, adv_key in adv_key_map.items():
+                if snap_key in params and adv_key in self.adv_exsim_inputs:
+                    _set(self.adv_exsim_inputs[adv_key], params[snap_key])
+
+            # --- G(R) segments ---
+            nseg_gs = int(params.get("EXSIM_GS_NSEG", "0") or "0")
+            if nseg_gs > 0:
+                # Clear existing segments
+                for _, _, rf in self._gs_segment_rows:
+                    rf.destroy()
+                self._gs_segment_rows = []
+                # Rebuild from snapshot
+                for seg_i in range(1, nseg_gs + 1):
+                    seg_str = params.get(f"EXSIM_GS_SEG{seg_i}", "")
+                    parts = seg_str.split()
+                    if len(parts) == 2:
+                        self._gs_add_segment(parts[0], parts[1])
+
+            # --- D(R) segments ---
+            nseg_dr = int(params.get("EXSIM_DR_NSEG", "0") or "0")
+            if nseg_dr > 0:
+                for _, _, rf in self._dr_segment_rows:
+                    rf.destroy()
+                self._dr_segment_rows = []
+                for seg_i in range(1, nseg_dr + 1):
+                    seg_str = params.get(f"EXSIM_DR_SEG{seg_i}", "")
+                    parts = seg_str.split()
+                    if len(parts) == 2:
+                        self._dr_add_segment(parts[0], parts[1])
+
+            # --- islipweight ---
+            islip_val = params.get("EXSIM_ISLIPWEIGHT", "")
+            islip_reverse = {"-1": "Uniform (-1)", "0": "From file (0)", "1": "Random (1)"}
+            if islip_val in islip_reverse:
+                self.islipweight_var.set(islip_reverse[islip_val])
+                self._on_islipweight_change(islip_reverse[islip_val])
+
+        # --- Stations ---
+        self.manual_station_list.clear()
+        for lon, lat, name in stations:
+            self.manual_station_list.append((lon, lat, name))
+        self._refresh_station_list()
+        self.trigger_map_update()
+
+        self.help_label.configure(
+            text=f"Fields pre-filled from previous run. "
+                 f"Experiment renamed to '{new_exp}'. "
+                 "Review all values then click Generate Files.",
+            text_color="#88dd88"
+        )

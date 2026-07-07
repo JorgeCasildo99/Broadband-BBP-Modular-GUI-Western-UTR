@@ -925,3 +925,62 @@ class WSLBridge:
             return method
 
         return "UNKNOWN"
+
+    @classmethod
+    def read_src_file(cls, run_id):
+        """
+        Reads the .src file for a given run_id from indata/<run_id>/.
+        Returns (ok, content_str). Content is the full .src text.
+        """
+        bbp_data = cls.run_command("echo $BBP_DATA_DIR").stdout.strip()
+        if not bbp_data:
+            bbp_data = f"{cls.get_wsl_home()}/bbp_data"
+
+        indata_path = f"{bbp_data}/indata/{run_id}"
+
+        # Try find first, then ls fallback
+        r = cls.run_command(
+            f"find '{indata_path}' -maxdepth 1 -name '*.src' 2>/dev/null | head -1"
+        )
+        src_path = r.stdout.strip()
+        if not src_path:
+            r = cls.run_command(
+                f"ls '{indata_path}' 2>/dev/null | grep '[.]src' | head -1"
+            )
+            fname = r.stdout.strip()
+            if fname:
+                src_path = f"{indata_path}/{fname}"
+
+        if not src_path:
+            return False, ""
+
+        return cls.read_wsl_file(src_path)
+
+    @classmethod
+    def read_stl_file(cls, run_id):
+        """
+        Reads the .stl file for a given run_id from indata/<run_id>/.
+        Returns (ok, content_str). Each line: lon lat name.
+        """
+        bbp_data = cls.run_command("echo $BBP_DATA_DIR").stdout.strip()
+        if not bbp_data:
+            bbp_data = f"{cls.get_wsl_home()}/bbp_data"
+
+        indata_path = f"{bbp_data}/indata/{run_id}"
+
+        r = cls.run_command(
+            f"find '{indata_path}' -maxdepth 1 -name '*.stl' 2>/dev/null | head -1"
+        )
+        stl_path = r.stdout.strip()
+        if not stl_path:
+            r = cls.run_command(
+                f"ls '{indata_path}' 2>/dev/null | grep '[.]stl' | head -1"
+            )
+            fname = r.stdout.strip()
+            if fname:
+                stl_path = f"{indata_path}/{fname}"
+
+        if not stl_path:
+            return False, ""
+
+        return cls.read_wsl_file(stl_path)
