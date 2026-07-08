@@ -241,6 +241,14 @@ class ExSimPanel(ctk.CTkFrame):
             "BETA"   : "3.7",
             "RHO"    : "2.8",
         }
+        # Subfault grid defaults (dl, dw in km) — must match Genslip DLEN/DWID
+        self._adv_exsim_defaults["DL"] = "0.1"
+        self._adv_exsim_defaults["DW"] = "0.1"
+
+        # Crustal amplification: "default", "ena_hardrock", or "custom"
+        self._crustal_amp_mode = "default"
+        self._crustal_amp_custom_path = ""
+
         # Default geometric spreading segments: list of (R_km_str, slope_str).
         # AB06 trilinear uses [(70, -1.3), (140, +0.2), (300, -0.5)]
         self._gs_segments_default = [
@@ -317,6 +325,36 @@ class ExSimPanel(ctk.CTkFrame):
 
         # Add descriptions to main descriptions dict for hover help
         self.descriptions.update(adv_descriptions)
+
+        # ── SUBFAULT GRID — dl and dw ──
+        ctk.CTkLabel(
+            self.adv_exsim_content,
+            text="Subfault Grid",
+            font=(res.FONT_LABEL[0], 11, "bold"),
+            text_color="#ffaa44",
+            anchor="w"
+        ).pack(anchor="w", padx=12, pady=(10, 2))
+
+        sf_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        sf_row.pack(fill="x", padx=12, pady=(0, 2))
+
+        for sf_label, sf_key in [("dl — along strike (km)", "DL"), ("dw — down dip (km)", "DW")]:
+            sf_col = ctk.CTkFrame(sf_row, fg_color="transparent")
+            sf_col.pack(side="left", expand=True, padx=(0, 10))
+            ctk.CTkLabel(sf_col, text=sf_label,
+                         font=(res.FONT_LABEL[0], 10), anchor="w").pack(anchor="w")
+            ent = ctk.CTkEntry(sf_col, height=28, width=80)
+            ent.insert(0, self._adv_exsim_defaults[sf_key])
+            ent.pack(anchor="w")
+            self.adv_exsim_inputs[sf_key] = ent
+
+        ctk.CTkLabel(
+            self.adv_exsim_content,
+            text="Set dl = DLEN and dw = DWID from the GP Rupture Only run "
+                 "so Genslip and ExSIM share the same subfault grid — no resampling needed.",
+            font=(res.FONT_LABEL[0], 9), text_color="#555555",
+            wraplength=480, justify="left", anchor="w"
+        ).pack(anchor="w", padx=12, pady=(0, 8))
 
         # ── GEOMETRIC SPREADING — dynamic multi-segment UI ──
         ctk.CTkLabel(
@@ -707,6 +745,105 @@ class ExSimPanel(ctk.CTkFrame):
         ctk.CTkFrame(
             slip_info_frame, fg_color="transparent", height=4
         ).pack()
+
+        # ── CRUSTAL AMPLIFICATION ──
+        ctk.CTkLabel(
+            self.adv_exsim_content,
+            text="Crustal Amplification",
+            font=(res.FONT_LABEL[0], 11, "bold"),
+            text_color="#ffaa44",
+            anchor="w"
+        ).pack(anchor="w", padx=12, pady=(10, 2))
+
+        amp_mode_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        amp_mode_row.pack(fill="x", padx=12, pady=(0, 4))
+
+        ctk.CTkLabel(amp_mode_row, text="Mode:",
+                     font=(res.FONT_LABEL[0], 10), anchor="w",
+                     width=50).pack(side="left")
+
+        self.crustal_amp_var = ctk.StringVar(value="BBP Default (California)")
+        amp_dropdown = ctk.CTkComboBox(
+            amp_mode_row,
+            values=["BBP Default (California)", "ENA Hard Rock (AB06)", "Custom file"],
+            variable=self.crustal_amp_var,
+            width=240, height=28,
+            command=self._on_crustal_amp_change
+        )
+        amp_dropdown.pack(side="left", padx=(4, 8))
+
+        self.btn_amp_preview = ctk.CTkButton(
+            amp_mode_row, text="Preview Curve",
+            width=120, height=28,
+            fg_color="#1a2a3a", hover_color="#2a3a4a",
+            text_color="#88aadd",
+            font=(res.FONT_LABEL[0], 10),
+            command=self._preview_crustal_amp
+        )
+        self.btn_amp_preview.pack(side="left")
+
+        # Custom file row — shown only when Custom file is selected
+        self.amp_file_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        # not packed yet
+
+        ctk.CTkLabel(self.amp_file_row, text="File (WSL path):",
+                     font=(res.FONT_LABEL[0], 10), anchor="w"
+                     ).pack(side="left", padx=(12, 4))
+        self.ent_amp_file = ctk.CTkEntry(self.amp_file_row, height=28, width=280,
+                                          placeholder_text="/home/user/my_amp.txt")
+        self.ent_amp_file.pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            self.amp_file_row, text="Browse…",
+            height=28, width=70,
+            fg_color="#333333", text_color="white", hover_color="#444444",
+            command=self._browse_amp_file
+        ).pack(side="left")
+
+        # Info card
+        amp_info_frame = ctk.CTkFrame(
+            self.adv_exsim_content,
+            fg_color="#1a1a2a", border_width=1, border_color="#2a2a4a", corner_radius=6
+        )
+        amp_info_frame.pack(fill="x", padx=12, pady=(6, 10))
+
+        ctk.CTkLabel(amp_info_frame, text="What does Crustal Amplification do?",
+                     font=(res.FONT_LABEL[0], 10, "bold"),
+                     text_color="#8899dd", anchor="w"
+                     ).pack(anchor="w", padx=10, pady=(8, 2))
+
+        amp_info_lines = [
+            ("What it is",
+             "When seismic waves travel up through the crust, the rock gets softer near "
+             "the surface and the waves slow down. Slower waves = bigger amplitude. "
+             "ExSIM applies a frequency-dependent amplification factor to account for this."),
+            ("BBP Default (California)",
+             "Uses the LABasin500 amplification file shipped with BBP. This is calibrated "
+             "for California near-surface rock — it over-amplifies ENA hard-rock sites "
+             "at frequencies above 2 Hz."),
+            ("ENA Hard Rock (AB06)",
+             "Uses values from Atkinson & Boore (2006) Table 3, calibrated for ENA "
+             "hard-rock sites (NEHRP Class A, Vs ≥ 2000 m/s). "
+             "Amplification ranges from 1.00 at 0.5 Hz to 1.41 at 10+ Hz. "
+             "This is the correct choice for Charlevoix."),
+            ("Custom file",
+             "Provide your own two-column text file (frequency Hz, amplification factor). "
+             "ExSIM interpolates between your points. If no file is given, ExSIM assumes "
+             "flat amplification = 1.0 at all frequencies."),
+        ]
+
+        for title, explanation in amp_info_lines:
+            row = ctk.CTkFrame(amp_info_frame, fg_color="transparent")
+            row.pack(fill="x", padx=10, pady=(2, 4))
+            ctk.CTkLabel(row, text=f"• {title}:",
+                         font=(res.FONT_LABEL[0], 9, "bold"),
+                         text_color="#aaaacc", anchor="w", width=120
+                         ).pack(side="left", anchor="n")
+            ctk.CTkLabel(row, text=explanation,
+                         font=(res.FONT_LABEL[0], 9),
+                         text_color="#777788", wraplength=260,
+                         justify="left", anchor="w"
+                         ).pack(side="left", anchor="n", pady=(0, 2))
+        ctk.CTkFrame(amp_info_frame, fg_color="transparent", height=4).pack()
 
         # --- MANUAL STATION PANEL ---
         self.manual_panel = ctk.CTkFrame(
@@ -1297,6 +1434,213 @@ class ExSimPanel(ctk.CTkFrame):
             raise ValueError("At least one path duration segment is required.")
         return segments
 
+    # ------------------------------------------------------------------
+    # CRUSTAL AMPLIFICATION HANDLERS
+    # ------------------------------------------------------------------
+
+    def _on_crustal_amp_change(self, choice):
+        """Shows/hides the custom file row based on dropdown selection."""
+        if choice == "Custom file":
+            self.amp_file_row.pack(fill="x", pady=(0, 4))
+        else:
+            self.amp_file_row.pack_forget()
+
+    def _browse_amp_file(self):
+        """Opens a file dialog to select a custom amplification file."""
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="Select Crustal Amplification File",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if path:
+            import subprocess
+            r = subprocess.run(
+                ["wsl.exe", "wslpath", "-u", path.replace("\\", "/")],
+                capture_output=True, text=True
+            )
+            wsl_path = r.stdout.strip() if r.returncode == 0 else path
+            self.ent_amp_file.delete(0, "end")
+            self.ent_amp_file.insert(0, wsl_path)
+
+    def _apply_crustal_amp_file(self):
+        """
+        Handles crustal amplification by writing values directly to the
+        amplification file that BBP's template_replace() will substitute
+        for <CRUSTAL_AMP_FILE>.
+
+        Strategy: instead of touching the <CRUSTAL_AMP_FILE> placeholder
+        (which breaks BBP's sequential parser), we overwrite the actual
+        amplification file that BBP points to in its velocity model.
+
+        BBP substitutes <CRUSTAL_AMP_FILE> with the path from its own
+        velocity model config. The default file is:
+          ~/bbp_gf/LABasin500/uwo/crustal_amps.txt
+        We overwrite that file with ENA or custom values when needed,
+        and restore it to California defaults on BBP Default selection.
+
+        Returns (ok: bool, err: str).
+        """
+        mode = self.crustal_amp_var.get() if hasattr(self, "crustal_amp_var") \
+               else "BBP Default (California)"
+
+        home = WSLBridge.get_wsl_home()
+        # This is the file BBP points to for crustal amplification
+        amp_file = f"{home}/bbp_gf/LABasin500/uwo/crustal_amps.txt"
+
+        if mode == "BBP Default (California)":
+            # Leave the file as-is — don't touch it
+            return True, ""
+
+        elif mode == "ENA Hard Rock (AB06)":
+            # CRITICAL: Fortran reads this with list-directed I/O.
+            # First non-blank line MUST be an integer (number of data points).
+            # No comment lines (!) before the count.
+            ena_content = (
+                " 6\n"
+                "  0.5    1.00\n"
+                "  1.0    1.13\n"
+                "  2.0    1.22\n"
+                "  5.0    1.36\n"
+                " 10.0    1.41\n"
+                " 50.0    1.41\n"
+            )
+            ok, err = WSLBridge.write_wsl_file(amp_file, ena_content)
+            if not ok:
+                return False, f"Could not write ENA amplification file: {err}"
+            return True, ""
+
+        elif mode == "Custom file":
+            custom_path = self.ent_amp_file.get().strip()
+            if not custom_path:
+                return False, "Custom amplification file: no path specified."
+            # Read the custom file and write it to the target location
+            ok_r, custom_content = WSLBridge.read_wsl_file(custom_path)
+            if not ok_r or not custom_content:
+                return False, f"Could not read custom amplification file: {custom_path}"
+            ok_w, err = WSLBridge.write_wsl_file(amp_file, custom_content)
+            if not ok_w:
+                return False, f"Could not apply custom amplification file: {err}"
+            return True, ""
+
+        return True, ""
+
+    def _get_crustal_amp_path(self):
+        """
+        Returns the WSL path to the crustal amplification file to use,
+        or None if BBP default should be used.
+
+        - BBP Default  → None  (leave <CRUSTAL_AMP_FILE> untouched)
+        - ENA Hard Rock → writes the AB06 file to WSL and returns its path
+        - Custom file   → returns the user-entered path
+        """
+        mode = self.crustal_amp_var.get()
+
+        if mode == "BBP Default (California)":
+            return None
+
+        if mode == "ENA Hard Rock (AB06)":
+            home = WSLBridge.get_wsl_home()
+            amp_path = f"{home}/bbp_gf/LABasin500/uwo/ena_hardrock_ab06.txt"
+            # Write the file if it doesn't already exist
+            ok_exist, _ = WSLBridge.read_wsl_file(amp_path)
+            if not ok_exist:
+                ena_content = (
+                    " 6\n"
+                    "  0.5    1.00\n"
+                    "  1.0    1.13\n"
+                    "  2.0    1.22\n"
+                    "  5.0    1.36\n"
+                    " 10.0    1.41\n"
+                    " 50.0    1.41\n"
+                )
+                WSLBridge.write_wsl_file(amp_path, ena_content)
+            return amp_path
+
+        if mode == "Custom file":
+            return self.ent_amp_file.get().strip() or None
+
+        return None
+
+    def _preview_crustal_amp(self):
+        """Plots the current crustal amplification curve in a popup window."""
+        import numpy as np
+        import matplotlib
+        matplotlib.use("TkAgg")
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+        mode = self.crustal_amp_var.get()
+
+        # AB06 ENA values
+        ena_f   = [0.5, 1.0, 2.0, 5.0, 10.0, 50.0]
+        ena_amp = [1.00, 1.13, 1.22, 1.36, 1.41, 1.41]
+
+        popup = ctk.CTkToplevel(self.winfo_toplevel())
+        popup.title("Crustal Amplification Preview")
+        popup.geometry("620x420")
+        popup.configure(fg_color="#111111")
+
+        fig, ax = plt.subplots(figsize=(7, 4), facecolor="#111111")
+        ax.set_facecolor("#1a1a1a")
+
+        if mode == "BBP Default (California)":
+            ax.semilogx([0.1, 0.5, 1, 2, 5, 10, 50],
+                        [1.0, 1.4, 1.7, 2.1, 2.3, 2.4, 2.5],
+                        color="#5ab4ff", linewidth=2, label="LABasin500 (California)")
+            ax.semilogx(ena_f, ena_amp, color="#88dd88", linewidth=1.5,
+                        linestyle="--", label="ENA Hard Rock AB06 (reference)")
+
+        elif mode == "ENA Hard Rock (AB06)":
+            ax.semilogx(ena_f, ena_amp, color="#88dd88", linewidth=2,
+                        label="ENA Hard Rock — AB06 Table 3")
+            ax.semilogx([0.1, 0.5, 1, 2, 5, 10, 50],
+                        [1.0, 1.4, 1.7, 2.1, 2.3, 2.4, 2.5],
+                        color="#5ab4ff", linewidth=1.5,
+                        linestyle="--", label="LABasin500 California (reference)")
+
+        elif mode == "Custom file":
+            path = self.ent_amp_file.get().strip()
+            ok, txt = WSLBridge.read_wsl_file(path) if path else (False, "")
+            if ok and txt:
+                freqs, amps = [], []
+                for ln in txt.splitlines():
+                    ln = ln.strip()
+                    if not ln or ln.startswith("!") or ln.startswith("#"):
+                        continue
+                    parts = ln.split()
+                    if len(parts) >= 2:
+                        try:
+                            freqs.append(float(parts[0]))
+                            amps.append(float(parts[1]))
+                        except ValueError:
+                            pass
+                if freqs:
+                    ax.semilogx(freqs, amps, color="#ffaa44", linewidth=2,
+                                label="Custom amplification")
+            ax.semilogx(ena_f, ena_amp, color="#88dd88", linewidth=1.5,
+                        linestyle="--", label="ENA Hard Rock AB06 (reference)")
+        else:
+            ax.semilogx([0.1, 50], [1.0, 1.0], color="#aaaaaa",
+                        linewidth=2, label="Flat (= 1.0)")
+
+        ax.set_xlabel("Frequency (Hz)", color="white")
+        ax.set_ylabel("Amplification factor", color="white")
+        ax.set_title(f"Crustal Amplification — {mode}", color="white", fontsize=11)
+        ax.tick_params(colors="white")
+        ax.spines["bottom"].set_color("#444")
+        ax.spines["left"].set_color("#444")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.legend(facecolor="#1a1a1a", edgecolor="#333", labelcolor="white",
+                  fontsize=9)
+        ax.grid(True, color="#333", linestyle="--", alpha=0.5)
+        ax.axhline(1.0, color="#555", linewidth=0.8, linestyle=":")
+        fig.tight_layout()
+
+        canvas = FigureCanvasTkAgg(fig, master=popup)
+        canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+        canvas.draw()
+
     def _toggle_adv_exsim(self):
         """Expands or collapses the Advanced Path Parameters section."""
         self.adv_exsim_expanded = not self.adv_exsim_expanded
@@ -1312,7 +1656,14 @@ class ExSimPanel(ctk.CTkFrame):
         for key, ent in self.adv_exsim_inputs.items():
             ent.delete(0, "end")
             ent.insert(0, self._adv_exsim_defaults[key])
-        # Reset GS segments to default (bilinear)
+        # Reset DL/DW
+        for key in ("DL", "DW"):
+            if key in self.adv_exsim_inputs:
+                self.adv_exsim_inputs[key].delete(0, "end")
+                self.adv_exsim_inputs[key].insert(0, self._adv_exsim_defaults[key])
+        # Reset crustal amplification
+        self.crustal_amp_var.set("BBP Default (California)")
+        self._on_crustal_amp_change("BBP Default (California)")
         for _, _, rf in self._gs_segment_rows:
             rf.destroy()
         self._gs_segment_rows = []
@@ -1732,6 +2083,20 @@ class ExSimPanel(ctk.CTkFrame):
                 i += 1
                 continue
 
+            # NOTE: DL/DW (subfault size) are NOT written to the .par file.
+            # BBP's exsim.py wrapper reads DLEN/DWID from the .src file and
+            # passes them to ExSIM directly — changing them in the .par breaks
+            # BBP's internal filename expectations and causes FileNotFoundError.
+
+            # NOTE: We deliberately do NOT touch the <CRUSTAL_AMP_FILE>
+            # placeholder line. BBP's exsim.py substitutes all <...>
+            # placeholders via template_replace() after our par write.
+            # If we replace or remove the placeholder, BBP's sequential
+            # scanner loses position and misreads NUM_STATIONS — causing
+            # FileNotFoundError. Crustal amplification is handled by
+            # overwriting the target amp file directly (see
+            # _apply_crustal_amp_file() called from generate_files).
+
             # Geometric spreading — nseg count line + N data lines.
             # The nseg count line is a single integer preceded by a comment
             # containing "r_ref" or "nseg". Replace the count and write all
@@ -1913,8 +2278,19 @@ class ExSimPanel(ctk.CTkFrame):
         src_lines = [f"# EXPERIMENTER: {user}\n"]
         for k, v in self.src_inputs.items():
             src_lines.append(f"{k} = {v.get()}\n")
-        src_lines.append("DLEN = 0.1\n")
-        src_lines.append("DWID = 0.1\n")
+        # DLEN/DWID — read from the Subfault Grid UI fields.
+        # BBP's exsim.py reads these from the .src file and passes them
+        # to ExSIM directly. Do NOT write them to labasin_exsim.par.
+        dl_val = self.adv_exsim_inputs.get("DL")
+        dw_val = self.adv_exsim_inputs.get("DW")
+        dlen = dl_val.get().strip() if dl_val else "0.1"
+        dwid = dw_val.get().strip() if dw_val else "0.1"
+        if not dlen:
+            dlen = "0.1"
+        if not dwid:
+            dwid = "0.1"
+        src_lines.append(f"DLEN = {dlen}\n")
+        src_lines.append(f"DWID = {dwid}\n")
         src_lines.append(f"SEED = {self.ent_seed.get()}\n")
         src_lines.append("\n")
         src_lines.append("# --- SIMULATION METHOD (at time of run) ---\n")
@@ -1936,6 +2312,9 @@ class ExSimPanel(ctk.CTkFrame):
             src_lines.append(f"# EXSIM_ETA  = {self.adv_exsim_inputs['ETA'].get()}\n")
             src_lines.append(f"# EXSIM_BETA = {self.adv_exsim_inputs['BETA'].get()}\n")
             src_lines.append(f"# EXSIM_RHO  = {self.adv_exsim_inputs['RHO'].get()}\n")
+            src_lines.append(f"# EXSIM_DL   = {self.adv_exsim_inputs['DL'].get()}\n")
+            src_lines.append(f"# EXSIM_DW   = {self.adv_exsim_inputs['DW'].get()}\n")
+            src_lines.append(f"# EXSIM_CRUSTAL_AMP = {self.crustal_amp_var.get()}\n")
         else:
             snap_segs = [(float(r), float(s)) for r, s in self._gs_segments_default]
             src_lines.append("# EXSIM_PARAMS_SOURCE = DEFAULT\n")
@@ -1944,6 +2323,9 @@ class ExSimPanel(ctk.CTkFrame):
             src_lines.append(f"# EXSIM_ETA  = {self._adv_exsim_defaults['ETA']}\n")
             src_lines.append(f"# EXSIM_BETA = {self._adv_exsim_defaults['BETA']}\n")
             src_lines.append(f"# EXSIM_RHO  = {self._adv_exsim_defaults['RHO']}\n")
+            src_lines.append(f"# EXSIM_DL   = {self._adv_exsim_defaults['DL']}\n")
+            src_lines.append(f"# EXSIM_DW   = {self._adv_exsim_defaults['DW']}\n")
+            src_lines.append("# EXSIM_CRUSTAL_AMP = BBP Default (California)\n")
 
         # Save GS segments: EXSIM_GS_NSEG then one line per segment
         src_lines.append(f"# EXSIM_GS_NSEG = {len(snap_segs)}\n")
@@ -2030,12 +2412,21 @@ class ExSimPanel(ctk.CTkFrame):
 
         # --- WRITE ADVANCED PATH PARAMETERS TO .par ---
         if self.adv_exsim_expanded:
-            ok_par, err_par = self._write_adv_exsim_to_par()
-            if not ok_par:
+            # Crustal amplification — write to the target amp file before par write
+            ok_amp, err_amp = self._apply_crustal_amp_file()
+            if not ok_amp:
                 self.help_label.configure(
-                    text=f"Warning: could not update labasin_exsim.par — {err_par}",
-                    text_color="#ffaa44"
+                    text=f"Crustal amplification error: {err_amp}",
+                    text_color=res.COLOR_ERROR
                 )
+                return
+
+        ok_par, err_par = self._write_adv_exsim_to_par()
+        if not ok_par:
+            self.help_label.configure(
+                text=f"Warning: could not update labasin_exsim.par — {err_par}",
+                text_color="#ffaa44"
+            )
 
         self.btn_run.configure(state="normal")
         self.help_label.configure(
@@ -2099,6 +2490,8 @@ class ExSimPanel(ctk.CTkFrame):
             "EXSIM_ETA"  : "ETA",
             "EXSIM_BETA" : "BETA",
             "EXSIM_RHO"  : "RHO",
+            "EXSIM_DL"   : "DL",
+            "EXSIM_DW"   : "DW",
         }
         has_adv_snapshot = any(k in params for k in adv_key_map)
 
@@ -2143,6 +2536,12 @@ class ExSimPanel(ctk.CTkFrame):
             if islip_val in islip_reverse:
                 self.islipweight_var.set(islip_reverse[islip_val])
                 self._on_islipweight_change(islip_reverse[islip_val])
+
+            # --- Crustal amplification ---
+            amp_snap = params.get("EXSIM_CRUSTAL_AMP", "")
+            if amp_snap and hasattr(self, "crustal_amp_var"):
+                self.crustal_amp_var.set(amp_snap)
+                self._on_crustal_amp_change(amp_snap)
 
         # --- Stations ---
         self.manual_station_list.clear()

@@ -425,11 +425,12 @@ class MainPanel(ctk.CTk):
         ).pack(expand=True)
 
         SimulationPanel(
-            master              = self,
-            base_name           = AppConfig.current_base_name,
-            src_path            = AppConfig.current_src_file,
-            stl_path            = AppConfig.current_stl_file,
-            on_results_callback = self.show_results_panel
+            master                = self,
+            base_name             = AppConfig.current_base_name,
+            src_path              = AppConfig.current_src_file,
+            stl_path              = AppConfig.current_stl_file,
+            on_results_callback   = self.show_results_panel,
+            on_dashboard_callback = self.load_dashboard
         )
 
     def show_results_panel(self):

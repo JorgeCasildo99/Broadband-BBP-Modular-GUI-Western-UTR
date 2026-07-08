@@ -317,7 +317,11 @@ class WSLBridge:
             )
         """
         try:
-            # Use 'cat >' to write content via stdin into the WSL file
+            # Encode as UTF-8 with Unix line endings (\n only).
+            # Using bytes + text=False prevents Windows from converting
+            # \n → \r\n, which breaks Fortran file readers in ExSIM/BBP.
+            content_bytes = content.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+
             if cls.IS_WINDOWS:
                 full_cmd = ["wsl", "bash", "-c", f"cat > '{wsl_path}'"]
             else:
@@ -325,13 +329,13 @@ class WSLBridge:
 
             result = subprocess.run(
                 full_cmd,
-                input=content,
+                input=content_bytes,
                 capture_output=True,
-                text=True
+                text=False
             )
 
             if result.returncode != 0:
-                return False, result.stderr.strip()
+                return False, result.stderr.decode("utf-8", errors="replace").strip()
             return True, ""
 
         except Exception as e:

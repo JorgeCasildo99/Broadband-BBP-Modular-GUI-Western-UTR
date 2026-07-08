@@ -1062,6 +1062,9 @@ class ResultsPanel(ctk.CTkToplevel):
                     ("EXSIM_ETA",  "Quality Factor — η (eta)"),
                     ("EXSIM_BETA", "Shear-wave velocity β (km/s)"),
                     ("EXSIM_RHO",  "Crustal density ρ (g/cm³)"),
+                    ("EXSIM_DL",   "Subfault length dl (km)"),
+                    ("EXSIM_DW",   "Subfault width dw (km)"),
+                    ("EXSIM_CRUSTAL_AMP", "Crustal amplification"),
                 ]
                 islip_labels = {"-1": "-1  (Uniform)", "0": "0  (From file)", "1": "1  (Random)"}
 

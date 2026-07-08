@@ -28,13 +28,14 @@ class SimulationPanel(ctk.CTkToplevel):
     and a results location message on completion.
     """
 
-    def __init__(self, master, base_name, src_path, stl_path, on_results_callback=None):
+    def __init__(self, master, base_name, src_path, stl_path, on_results_callback=None, on_dashboard_callback=None):
         super().__init__(master)
 
-        self.base_name            = base_name
-        self.src_path             = src_path
-        self.stl_path             = stl_path
-        self._on_results_callback = on_results_callback
+        self.base_name              = base_name
+        self.src_path               = src_path
+        self.stl_path               = stl_path
+        self._on_results_callback   = on_results_callback
+        self._on_dashboard_callback = on_dashboard_callback
 
         # Get the module list for the selected profile
         self._profile         = AppConfig.simulation_profile
@@ -230,6 +231,18 @@ class SimulationPanel(ctk.CTkToplevel):
             command=self._retry_simulation
         )
         self.btn_retry.pack(side="right", padx=(0, 10), pady=12)
+
+        # Back to Dashboard — always visible, lets user exit on failure
+        self.btn_dashboard = ctk.CTkButton(
+            self.bottom_frame,
+            text="← Back to Dashboard",
+            height=36,
+            fg_color="#333333",
+            hover_color="#444444",
+            text_color="white",
+            command=self._go_to_dashboard
+        )
+        self.btn_dashboard.pack(side="left", padx=(10, 0), pady=12)
 
     # ------------------------------------------------------------------
     # SIMULATION CONTROL
@@ -440,6 +453,7 @@ class SimulationPanel(ctk.CTkToplevel):
             self._log("=" * 60)
 
             self.btn_results.configure(state="normal")
+            self._restore_par_defaults()
 
         else:
             failed = self._failed_module or "Unknown module"
@@ -469,6 +483,101 @@ class SimulationPanel(ctk.CTkToplevel):
         self._log("=" * 60)
 
         self.btn_retry.configure(state="normal")
+        self._restore_par_defaults()
+
+    # ------------------------------------------------------------------
+    # GO TO DASHBOARD
+    # ------------------------------------------------------------------
+
+    def _go_to_dashboard(self):
+        """Restores par defaults then navigates back to the Dashboard."""
+        self._restore_par_defaults()
+        if self._on_dashboard_callback:
+            self._on_dashboard_callback()
+        self.after(200, self.destroy)
+
+    def _restore_par_defaults(self):
+        """
+        Restores labasin_exsim.par to clean template state and
+        crustal_amps.txt to original California values after every
+        simulation — success or failure.
+        """
+        home = WSLBridge.get_wsl_home()
+        par_path = f"{home}/bbp_gf/LABasin500/uwo/labasin_exsim.par"
+
+        ok, content_par = WSLBridge.read_wsl_file(par_path)
+        if not ok or not content_par:
+            return
+
+        import re as _re
+        lines = content_par.splitlines()
+        new_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Restore Q factor
+            if _re.match(r'^\s*\d+\.?\d*\s+\d+\.?\d*\s+\d*\.?\d+\s*$', stripped)                     and i > 0 and "Quality factor" in lines[i-1]:
+                new_lines.append("  600  680.0  0.35")
+                i += 1
+                continue
+
+            # Restore beta/rho
+            if _re.match(r'^\s*\d+\.?\d*\s+\d+\.?\d*\s*$', stripped)                     and i > 0 and ("beta" in lines[i-1].lower() or "rho" in lines[i-1].lower()):
+                new_lines.append("  3.7  2.8")
+                i += 1
+                continue
+
+            # Restore G(R) to default bilinear
+            if _re.match(r'^\s*\d+\s*$', stripped)                     and i > 0                     and ("r_ref" in lines[i-1].lower() or "nseg" in lines[i-1].lower()):
+                original_nseg = int(stripped.strip())
+                new_lines.append("    2")
+                new_lines.append("      1.0 -1.0")
+                new_lines.append("     40.0 -0.5")
+                i += 1 + original_nseg
+                continue
+
+            # Restore D(R) to default 2-hinge
+            if _re.match(r'^\s*\d+\s*$', stripped)                     and i > 0                     and "duration" in lines[i-1].lower():
+                original_ndur = int(stripped.strip())
+                new_lines.append("    2")
+                new_lines.append("    0.0 1.0")
+                new_lines.append("   50.0 10.0")
+                new_lines.append("  0.05")
+                i += 1 + original_ndur
+                continue
+
+            # Restore islipweight to 1 (Random)
+            if _re.match(r'^\s*-?[01]\s*$', stripped)                     and i > 0 and "random weights" in lines[i-1].lower():
+                new_lines.append("   1")
+                i += 1
+                continue
+
+            new_lines.append(line)
+            i += 1
+
+        WSLBridge.write_wsl_file(par_path, "\n".join(new_lines) + "\n")
+
+        # Restore crustal_amps.txt to original LABasin500 content.
+        # CRITICAL FORMAT: after ! comment lines, Fortran reads ONE INTEGER
+        # (the count of data pairs), then that many frequency/amp pairs.
+        amp_path = f"{home}/bbp_gf/LABasin500/uwo/crustal_amps.txt"
+        california_content = (
+            "! Crustal amplification for LABasin500\n"
+            "! Frequency(Hz)   Amplification\n"
+            " 9\n"
+            "  0.1    1.00\n"
+            "  0.2    1.01\n"
+            "  0.5    1.04\n"
+            "  1.0    1.07\n"
+            "  2.0    1.10\n"
+            "  5.0    1.15\n"
+            " 10.0    1.18\n"
+            " 20.0    1.20\n"
+            " 50.0    1.20\n"
+        )
+        WSLBridge.write_wsl_file(amp_path, california_content)
 
     # ------------------------------------------------------------------
     # RESULTS LOCATION
