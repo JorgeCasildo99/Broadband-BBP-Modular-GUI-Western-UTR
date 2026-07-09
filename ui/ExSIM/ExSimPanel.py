@@ -398,72 +398,38 @@ class ExSimPanel(ctk.CTkFrame):
         for r_val, s_val in self._gs_segments_default:
             self._gs_add_segment(r_val, s_val)
 
-        # ── GS INFO CARD ──
-        gs_info_frame = ctk.CTkFrame(
-            self.adv_exsim_content,
-            fg_color="#1a1a2a",
-            border_width=1,
-            border_color="#2a2a4a",
-            corner_radius=6
+        # ── GS INFO CARD (collapsible) ──
+        self._make_collapsible_info_card(
+            parent      = self.adv_exsim_content,
+            title       = "What does Geometric Spreading control?",
+            color       = "#1a1a2a",
+            label_color = "#aaaacc",
+            text_color  = "#777788",
+            btn_text    = "ℹ  Show G(R) info",
+            lines       = [
+                ("Amplitude decay",
+                 "Controls how fast ground motion amplitude drops with distance. "
+                 "A slope of −1.0 means amplitude halves every time distance doubles "
+                 "(body wave behaviour, typical close to the source). "
+                 "A slope of −0.5 means slower decay (surface wave / Lg behaviour, "
+                 "typical at larger distances)."),
+                ("Moho bounce (+0.2)",
+                 "In ENA, between ~70–140 km, amplitudes can temporarily increase "
+                 "because seismic waves reflect off the base of the crust (the Moho). "
+                 "AB06 models this as a positive slope segment (+0.2). "
+                 "This is why ENA earthquakes are felt much farther than California events."),
+                ("Segments",
+                 "Each segment defines a distance range and the decay rate within it. "
+                 "Add segments to build the bilinear (2), trilinear (3, AB06 standard), "
+                 "or any N-segment model you need. "
+                 "The amplitude is continuous — each segment picks up exactly where the previous one left off."),
+                ("ENA vs California",
+                 "California uses approximately −1.0 for all distances. "
+                 "ENA uses a steeper −1.3 close in, then the Moho bounce, then −0.5 far out. "
+                 "Using the wrong model for your region will over- or under-predict amplitudes "
+                 "at all distances."),
+            ]
         )
-        gs_info_frame.pack(fill="x", padx=12, pady=(6, 4))
-
-        ctk.CTkLabel(
-            gs_info_frame,
-            text="What does Geometric Spreading control?",
-            font=(res.FONT_LABEL[0], 10, "bold"),
-            text_color="#8899dd",
-            anchor="w"
-        ).pack(anchor="w", padx=10, pady=(8, 2))
-
-        gs_info_lines = [
-            ("Amplitude decay",
-             "Controls how fast ground motion amplitude drops with distance. "
-             "A slope of −1.0 means amplitude halves every time distance doubles "
-             "(body wave behaviour, typical close to the source). "
-             "A slope of −0.5 means slower decay (surface wave / Lg behaviour, "
-             "typical at larger distances)."),
-            ("Moho bounce (+0.2)",
-             "In ENA, between ~70–140 km, amplitudes can temporarily increase "
-             "because seismic waves reflect off the base of the crust (the Moho). "
-             "AB06 models this as a positive slope segment (+0.2). "
-             "This is why ENA earthquakes are felt much farther than California events."),
-            ("Segments",
-             "Each segment defines a distance range and the decay rate within it. "
-             "Add segments to build the bilinear (2), trilinear (3, AB06 standard), "
-             "or any N-segment model you need. "
-             "The amplitude is continuous — each segment picks up exactly where the previous one left off."),
-            ("ENA vs California",
-             "California uses approximately −1.0 for all distances. "
-             "ENA uses a steeper −1.3 close in, then the Moho bounce, then −0.5 far out. "
-             "Using the wrong model for your region will over- or under-predict amplitudes "
-             "at all distances."),
-        ]
-
-        for title, explanation in gs_info_lines:
-            row = ctk.CTkFrame(gs_info_frame, fg_color="transparent")
-            row.pack(fill="x", padx=10, pady=(2, 4))
-
-            ctk.CTkLabel(
-                row,
-                text=f"• {title}:",
-                font=(res.FONT_LABEL[0], 9, "bold"),
-                text_color="#aaaacc",
-                anchor="w",
-                width=120
-            ).pack(side="left", anchor="n")
-
-            ctk.CTkLabel(
-                row,
-                text=explanation,
-                font=(res.FONT_LABEL[0], 9),
-                text_color="#777788",
-                wraplength=260,
-                justify="left",
-                anchor="w"
-            ).pack(side="left", anchor="n", pady=(0, 2))
-
-        ctk.CTkFrame(gs_info_frame, fg_color="transparent", height=4).pack()
 
         # ── PATH DURATION — dynamic multi-segment UI ──
         ctk.CTkLabel(
@@ -507,77 +473,43 @@ class ExSimPanel(ctk.CTkFrame):
         for r_val, d_val in self._dr_segments_default:
             self._dr_add_segment(r_val, d_val)
 
-        # ── D(R) INFO CARD ──
-        dr_info_frame = ctk.CTkFrame(
-            self.adv_exsim_content,
-            fg_color="#1a2a1a",
-            border_width=1,
-            border_color="#2a3a2a",
-            corner_radius=6
+        # ── D(R) INFO CARD (collapsible) ──
+        self._make_collapsible_info_card(
+            parent      = self.adv_exsim_content,
+            title       = "What does Path Duration control?",
+            color       = "#1a2a1a",
+            label_color = "#aaccaa",
+            text_color  = "#778877",
+            btn_text    = "ℹ  Show D(R) info",
+            lines       = [
+                ("What it is",
+                 "Path duration is how much longer the shaking lasts because of the "
+                 "travel path — on top of the source duration (which depends on magnitude). "
+                 "Scattered and reflected waves arrive at the site after the direct wave, "
+                 "stretching the total signal window."),
+                ("Coefficient d",
+                 "Each segment has a coefficient d (seconds per km). "
+                 "d = 0.0 means duration does not grow in that distance range. "
+                 "d = 0.16 means shaking lasts 0.16 seconds longer for every extra km of distance. "
+                 "Higher d = longer shaking at farther stations."),
+                ("Why segments?",
+                 "Duration does not grow at a constant rate with distance. "
+                 "Close in (0–10 km) the path adds almost nothing. "
+                 "Between 10–70 km it grows fast as scattered waves accumulate. "
+                 "Beyond 70 km growth slows because the wavefield becomes more diffuse. "
+                 "AB06 uses 4 segments to capture this behaviour."),
+                ("Effect on simulations",
+                 "Longer duration increases the energy in the simulated signal "
+                 "and affects the FAS at low frequencies and the response spectra at long periods. "
+                 "Underestimating duration will make far-field simulations look too short and spiky. "
+                 "Overestimating it will spread energy over too long a window and underpredict peaks."),
+                ("ENA vs California",
+                 "ENA has longer path duration than California at the same distance — "
+                 "the rigid, low-attenuation crust keeps scattered waves bouncing around "
+                 "much longer. This is one reason ENA earthquakes cause felt shaking "
+                 "hundreds of kilometres from the epicentre."),
+            ]
         )
-        dr_info_frame.pack(fill="x", padx=12, pady=(6, 4))
-
-        ctk.CTkLabel(
-            dr_info_frame,
-            text="What does Path Duration control?",
-            font=(res.FONT_LABEL[0], 10, "bold"),
-            text_color="#88cc88",
-            anchor="w"
-        ).pack(anchor="w", padx=10, pady=(8, 2))
-
-        dr_info_lines = [
-            ("What it is",
-             "Path duration is how much longer the shaking lasts because of the "
-             "travel path — on top of the source duration (which depends on magnitude). "
-             "Scattered and reflected waves arrive at the site after the direct wave, "
-             "stretching the total signal window."),
-            ("Coefficient d",
-             "Each segment has a coefficient d (seconds per km). "
-             "d = 0.0 means duration does not grow in that distance range. "
-             "d = 0.16 means shaking lasts 0.16 seconds longer for every extra km of distance. "
-             "Higher d = longer shaking at farther stations."),
-            ("Why segments?",
-             "Duration does not grow at a constant rate with distance. "
-             "Close in (0–10 km) the path adds almost nothing. "
-             "Between 10–70 km it grows fast as scattered waves accumulate. "
-             "Beyond 70 km growth slows because the wavefield becomes more diffuse. "
-             "AB06 uses 4 segments to capture this behaviour."),
-            ("Effect on simulations",
-             "Longer duration increases the energy in the simulated signal "
-             "and affects the FAS at low frequencies and the response spectra at long periods. "
-             "Underestimating duration will make far-field simulations look too short and spiky. "
-             "Overestimating it will spread energy over too long a window and underpredict peaks."),
-            ("ENA vs California",
-             "ENA has longer path duration than California at the same distance — "
-             "the rigid, low-attenuation crust keeps scattered waves bouncing around "
-             "much longer. This is one reason ENA earthquakes cause felt shaking "
-             "hundreds of kilometres from the epicentre."),
-        ]
-
-        for title, explanation in dr_info_lines:
-            row = ctk.CTkFrame(dr_info_frame, fg_color="transparent")
-            row.pack(fill="x", padx=10, pady=(2, 4))
-
-            ctk.CTkLabel(
-                row,
-                text=f"• {title}:",
-                font=(res.FONT_LABEL[0], 9, "bold"),
-                text_color="#aaccaa",
-                anchor="w",
-                width=120
-            ).pack(side="left", anchor="n")
-
-            ctk.CTkLabel(
-                row,
-                text=explanation,
-                font=(res.FONT_LABEL[0], 9),
-                text_color="#778877",
-                wraplength=260,
-                justify="left",
-                anchor="w"
-            ).pack(side="left", anchor="n", pady=(0, 2))
-
-        ctk.CTkFrame(dr_info_frame, fg_color="transparent", height=4).pack()
 
         # Reset button
         reset_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
@@ -657,8 +589,12 @@ class ExSimPanel(ctk.CTkFrame):
         )
         self.slip_mode_menu.pack(side="left")
 
-        # File picker row — only shown when "From file (0)" is selected
-        self.slip_file_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        # File picker row — child of a wrapper placed directly below the dropdown.
+        # Using a wrapper means pack()/pack_forget() positions it right here,
+        # not at the bottom of adv_exsim_content.
+        self._slip_file_wrapper = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        # Not packed yet — only appears when From file (0) is selected
+        self.slip_file_row = ctk.CTkFrame(self._slip_file_wrapper, fg_color="transparent")
         # Not packed yet — revealed by _on_islipweight_change
 
         lbl_sf = ctk.CTkLabel(
@@ -685,66 +621,33 @@ class ExSimPanel(ctk.CTkFrame):
             command=self._browse_slip_file
         ).pack(side="left")
 
-        # Info card explaining the three slip modes
-        slip_info_frame = ctk.CTkFrame(
-            self.adv_exsim_content,
-            fg_color="#1a2a1a",
-            border_width=1,
-            border_color="#2a4a2a",
-            corner_radius=6
+        # ── SLIP INFO CARD (collapsible) ──
+        self._make_collapsible_info_card(
+            parent      = self.adv_exsim_content,
+            title       = "What does each option do?",
+            color       = "#1a2a1a",
+            label_color = "#aaaaaa",
+            text_color  = "#777777",
+            btn_text    = "ℹ  Show slip weight info",
+            lines       = [
+                ("Uniform (-1)",
+                 "Every subfault receives the same slip amount. "
+                 "Simplest option — use when you want a smooth, "
+                 "homogeneous rupture with no spatial variation."),
+                ("Random (1)",
+                 "ExSIM generates a random slip distribution across "
+                 "the fault using its internal algorithm. The SEED value "
+                 "above controls which random pattern is produced — "
+                 "same SEED always gives the same result. "
+                 "Recommended default for most simulations."),
+                ("From file (0)",
+                 "ExSIM reads slip values from a text file you provide. "
+                 "Each value represents the slip on one subfault. "
+                 "Use this when you have a specific rupture model "
+                 "from an external source and want ExSIM to reproduce "
+                 "that exact slip pattern."),
+            ]
         )
-        slip_info_frame.pack(fill="x", padx=12, pady=(4, 10))
-
-        ctk.CTkLabel(
-            slip_info_frame,
-            text="What does each option do?",
-            font=(res.FONT_LABEL[0], 10, "bold"),
-            text_color="#88cc88",
-            anchor="w"
-        ).pack(anchor="w", padx=10, pady=(8, 2))
-
-        slip_info_lines = [
-            ("Uniform (-1)",  "Every subfault receives the same slip amount. "
-                              "Simplest option — use when you want a smooth, "
-                              "homogeneous rupture with no spatial variation."),
-            ("Random (1)",    "ExSIM generates a random slip distribution across "
-                              "the fault using its internal algorithm. The SEED value "
-                              "above controls which random pattern is produced — "
-                              "same SEED always gives the same result. "
-                              "Recommended default for most simulations."),
-            ("From file (0)", "ExSIM reads slip values from a text file you provide. "
-                              "Each value represents the slip on one subfault. "
-                              "Use this when you have a specific rupture model "
-                              "from an external source and want ExSIM to reproduce "
-                              "that exact slip pattern."),
-        ]
-
-        for mode, explanation in slip_info_lines:
-            row = ctk.CTkFrame(slip_info_frame, fg_color="transparent")
-            row.pack(fill="x", padx=10, pady=(2, 4))
-
-            ctk.CTkLabel(
-                row,
-                text=f"• {mode}:",
-                font=(res.FONT_LABEL[0], 9, "bold"),
-                text_color="#aaaaaa",
-                anchor="w",
-                width=110
-            ).pack(side="left", anchor="n")
-
-            ctk.CTkLabel(
-                row,
-                text=explanation,
-                font=(res.FONT_LABEL[0], 9),
-                text_color="#777777",
-                wraplength=210,
-                justify="left",
-                anchor="w"
-            ).pack(side="left", anchor="n", pady=(0, 2))
-
-        ctk.CTkFrame(
-            slip_info_frame, fg_color="transparent", height=4
-        ).pack()
 
         # ── CRUSTAL AMPLIFICATION ──
         ctk.CTkLabel(
@@ -782,8 +685,10 @@ class ExSimPanel(ctk.CTkFrame):
         )
         self.btn_amp_preview.pack(side="left")
 
-        # Custom file row — shown only when Custom file is selected
-        self.amp_file_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        # Custom file row — child of a wrapper placed directly below the dropdown.
+        self._amp_file_wrapper = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        # Not packed yet — only appears when Custom file is selected
+        self.amp_file_row = ctk.CTkFrame(self._amp_file_wrapper, fg_color="transparent")
         # not packed yet
 
         ctk.CTkLabel(self.amp_file_row, text="File (WSL path):",
@@ -799,51 +704,34 @@ class ExSimPanel(ctk.CTkFrame):
             command=self._browse_amp_file
         ).pack(side="left")
 
-        # Info card
-        amp_info_frame = ctk.CTkFrame(
-            self.adv_exsim_content,
-            fg_color="#1a1a2a", border_width=1, border_color="#2a2a4a", corner_radius=6
+        # ── AMP INFO CARD (collapsible) ──
+        self._make_collapsible_info_card(
+            parent      = self.adv_exsim_content,
+            title       = "What does Crustal Amplification do?",
+            color       = "#1a1a2a",
+            label_color = "#aaaacc",
+            text_color  = "#777788",
+            btn_text    = "ℹ  Show amplification info",
+            lines       = [
+                ("What it is",
+                 "When seismic waves travel up through the crust, the rock gets softer near "
+                 "the surface and the waves slow down. Slower waves = bigger amplitude. "
+                 "ExSIM applies a frequency-dependent amplification factor to account for this."),
+                ("BBP Default (California)",
+                 "Uses the LABasin500 amplification file shipped with BBP. This is calibrated "
+                 "for California near-surface rock — it over-amplifies ENA hard-rock sites "
+                 "at frequencies above 2 Hz."),
+                ("ENA Hard Rock (AB06)",
+                 "Uses values from Atkinson & Boore (2006) Table 3, calibrated for ENA "
+                 "hard-rock sites (NEHRP Class A, Vs ≥ 2000 m/s). "
+                 "Amplification ranges from 1.00 at 0.5 Hz to 1.41 at 10+ Hz. "
+                 "This is the correct choice for Charlevoix."),
+                ("Custom file",
+                 "Provide your own two-column text file (frequency Hz, amplification factor). "
+                 "ExSIM interpolates between your points. If no file is given, ExSIM assumes "
+                 "flat amplification = 1.0 at all frequencies."),
+            ]
         )
-        amp_info_frame.pack(fill="x", padx=12, pady=(6, 10))
-
-        ctk.CTkLabel(amp_info_frame, text="What does Crustal Amplification do?",
-                     font=(res.FONT_LABEL[0], 10, "bold"),
-                     text_color="#8899dd", anchor="w"
-                     ).pack(anchor="w", padx=10, pady=(8, 2))
-
-        amp_info_lines = [
-            ("What it is",
-             "When seismic waves travel up through the crust, the rock gets softer near "
-             "the surface and the waves slow down. Slower waves = bigger amplitude. "
-             "ExSIM applies a frequency-dependent amplification factor to account for this."),
-            ("BBP Default (California)",
-             "Uses the LABasin500 amplification file shipped with BBP. This is calibrated "
-             "for California near-surface rock — it over-amplifies ENA hard-rock sites "
-             "at frequencies above 2 Hz."),
-            ("ENA Hard Rock (AB06)",
-             "Uses values from Atkinson & Boore (2006) Table 3, calibrated for ENA "
-             "hard-rock sites (NEHRP Class A, Vs ≥ 2000 m/s). "
-             "Amplification ranges from 1.00 at 0.5 Hz to 1.41 at 10+ Hz. "
-             "This is the correct choice for Charlevoix."),
-            ("Custom file",
-             "Provide your own two-column text file (frequency Hz, amplification factor). "
-             "ExSIM interpolates between your points. If no file is given, ExSIM assumes "
-             "flat amplification = 1.0 at all frequencies."),
-        ]
-
-        for title, explanation in amp_info_lines:
-            row = ctk.CTkFrame(amp_info_frame, fg_color="transparent")
-            row.pack(fill="x", padx=10, pady=(2, 4))
-            ctk.CTkLabel(row, text=f"• {title}:",
-                         font=(res.FONT_LABEL[0], 9, "bold"),
-                         text_color="#aaaacc", anchor="w", width=120
-                         ).pack(side="left", anchor="n")
-            ctk.CTkLabel(row, text=explanation,
-                         font=(res.FONT_LABEL[0], 9),
-                         text_color="#777788", wraplength=260,
-                         justify="left", anchor="w"
-                         ).pack(side="left", anchor="n", pady=(0, 2))
-        ctk.CTkFrame(amp_info_frame, fg_color="transparent", height=4).pack()
 
         # --- MANUAL STATION PANEL ---
         self.manual_panel = ctk.CTkFrame(
@@ -1439,11 +1327,13 @@ class ExSimPanel(ctk.CTkFrame):
     # ------------------------------------------------------------------
 
     def _on_crustal_amp_change(self, choice):
-        """Shows/hides the custom file row based on dropdown selection."""
+        """Shows/hides the custom file row directly below the dropdown."""
         if choice == "Custom file":
-            self.amp_file_row.pack(fill="x", pady=(0, 4))
+            self._amp_file_wrapper.pack(fill="x", padx=12, pady=(2, 2))
+            self.amp_file_row.pack(fill="x")
         else:
             self.amp_file_row.pack_forget()
+            self._amp_file_wrapper.pack_forget()
 
     def _browse_amp_file(self):
         """Opens a file dialog to select a custom amplification file."""
@@ -1640,6 +1530,97 @@ class ExSimPanel(ctk.CTkFrame):
         canvas = FigureCanvasTkAgg(fig, master=popup)
         canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
         canvas.draw()
+
+    # ------------------------------------------------------------------
+    # COLLAPSIBLE INFO CARD HELPER
+    # ------------------------------------------------------------------
+
+    def _make_collapsible_info_card(self, parent, title, color, lines,
+                                     label_color, text_color, btn_text="ℹ  Show info"):
+        """
+        Builds a collapsible info card with a centered toggle button.
+        The card expands directly below the button — not at the bottom of the panel.
+        Hidden by default.
+        """
+        # Wrapper holds both the button and the card together in place
+        wrapper = ctk.CTkFrame(parent, fg_color="transparent")
+        wrapper.pack(fill="x", pady=(6, 2))
+
+        # Toggle button — centered inside the wrapper
+        toggle_btn = ctk.CTkButton(
+            wrapper,
+            text=btn_text,
+            width=260, height=32,
+            fg_color="#1e1e2e",
+            hover_color="#2a2a3a",
+            border_width=1,
+            border_color="#333355",
+            text_color="#8899dd",
+            font=(res.FONT_LABEL[0], 10),
+            anchor="center"
+        )
+        toggle_btn.pack(anchor="center")
+
+        # Card frame — packed inside the same wrapper, directly below the button
+        card = ctk.CTkFrame(
+            wrapper,
+            fg_color=color,
+            border_width=1,
+            border_color="#2a2a4a",
+            corner_radius=6
+        )
+        # NOT packed yet — hidden until toggle
+
+        # Header
+        ctk.CTkLabel(
+            card,
+            text=title,
+            font=(res.FONT_LABEL[0], 10, "bold"),
+            text_color=label_color,
+            anchor="w"
+        ).pack(anchor="w", padx=10, pady=(8, 2))
+
+        # Content rows
+        for lbl, explanation in lines:
+            row = ctk.CTkFrame(card, fg_color="transparent")
+            row.pack(fill="x", padx=10, pady=(2, 4))
+            ctk.CTkLabel(
+                row,
+                text=f"• {lbl}:",
+                font=(res.FONT_LABEL[0], 9, "bold"),
+                text_color=label_color,
+                anchor="w",
+                width=120
+            ).pack(side="left", anchor="n")
+            ctk.CTkLabel(
+                row,
+                text=explanation,
+                font=(res.FONT_LABEL[0], 9),
+                text_color=text_color,
+                wraplength=260,
+                justify="left",
+                anchor="w"
+            ).pack(side="left", anchor="n", pady=(0, 2))
+
+        ctk.CTkFrame(card, fg_color="transparent", height=4).pack()
+
+        # Toggle logic
+        _state = {"open": False}
+
+        def _toggle():
+            if _state["open"]:
+                card.pack_forget()
+                toggle_btn.configure(text=btn_text)
+                _state["open"] = False
+            else:
+                card.pack(fill="x", padx=4, pady=(4, 2))
+                toggle_btn.configure(
+                    text=btn_text.replace("Show", "Hide")
+                )
+                _state["open"] = True
+
+        toggle_btn.configure(command=_toggle)
+        return toggle_btn
 
     def _toggle_adv_exsim(self):
         """Expands or collapses the Advanced Path Parameters section."""
@@ -2003,11 +1984,13 @@ class ExSimPanel(ctk.CTkFrame):
         ).pack(pady=(4, 10))
 
     def _on_islipweight_change(self, choice):
-        """Shows or hides the slip file picker based on islipweight selection."""
+        """Shows or hides the slip file picker directly below the dropdown."""
         if choice == "From file (0)":
-            self.slip_file_row.pack(fill="x", padx=12, pady=(2, 4))
+            self._slip_file_wrapper.pack(fill="x", padx=12, pady=(2, 2))
+            self.slip_file_row.pack(fill="x")
         else:
             self.slip_file_row.pack_forget()
+            self._slip_file_wrapper.pack_forget()
 
     def _browse_slip_file(self):
         """Opens a file dialog to select the slip weights text file."""

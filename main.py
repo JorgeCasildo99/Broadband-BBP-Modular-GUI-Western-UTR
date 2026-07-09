@@ -40,8 +40,14 @@ class MainPanel(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.title("BBP Modular Interface - Research System")
-        self.geometry("1100x800")
         self.minsize(1000, 750)
+
+        # Center exactly on screen before anything is drawn
+        self.update_idletasks()
+        _w, _h = 1100, 800
+        _x = (self.winfo_screenwidth()  - _w) // 2
+        _y = (self.winfo_screenheight() - _h) // 2
+        self.geometry(f"{_w}x{_h}+{_x}+{_y}")
 
         # Main background color
         self.configure(fg_color="#1a1a1a")
