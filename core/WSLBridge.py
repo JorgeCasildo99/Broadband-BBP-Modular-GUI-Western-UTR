@@ -373,6 +373,33 @@ class WSLBridge:
     # ------------------------------------------------------------------
 
     @classmethod
+    def list_wsl_dir_detailed(cls, wsl_path):
+        """
+        Lists the contents of a WSL directory, separating folders from files.
+
+        Returns:
+            tuple: (bool: success, list: folders, list: files, str: error)
+            folders and files are sorted lists of names (not full paths).
+        """
+        cmd = f"ls -1p '{wsl_path}' 2>/dev/null"
+        result = cls.run_command(cmd)
+        if result.returncode != 0:
+            return False, [], [], result.stderr.strip()
+
+        folders = []
+        files   = []
+        for entry in result.stdout.strip().splitlines():
+            entry = entry.strip()
+            if not entry:
+                continue
+            if entry.endswith("/"):
+                folders.append(entry.rstrip("/"))
+            else:
+                files.append(entry)
+
+        return True, sorted(folders), sorted(files), ""
+
+    @classmethod
     def list_wsl_dir(cls, wsl_path, extension=None):
         """
         Lists files inside a WSL directory, optionally filtered by extension.

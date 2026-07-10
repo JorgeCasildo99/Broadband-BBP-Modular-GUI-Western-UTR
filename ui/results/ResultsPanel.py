@@ -1153,6 +1153,30 @@ class ResultsPanel(ctk.CTkToplevel):
                                  text_color="white", anchor="w"
                                  ).grid(row=0, column=1, padx=12, pady=5, sticky="ew")
 
+                # slip file path — shown when islipweight = 0 (From file)
+                slip_file_val = exsim_snap.get("EXSIM_SLIP_FILE")
+                if slip_file_val:
+                    rf_sf = ctk.CTkFrame(exsim_frame, fg_color="#1a1a1a", corner_radius=0)
+                    rf_sf.pack(fill="x")
+                    rf_sf.grid_columnconfigure((0, 1), weight=1, uniform="ec")
+                    ctk.CTkLabel(rf_sf, text="Slip weights file",
+                                 font=(res.FONT_LABEL[0], 11),
+                                 text_color="#cccccc", anchor="w"
+                                 ).grid(row=0, column=0, padx=12, pady=5, sticky="ew")
+                    # Show just the filename, full path on hover via tooltip-style label
+                    fname = slip_file_val.rsplit("/", 1)[-1]
+                    lbl_sf = ctk.CTkLabel(rf_sf, text=fname,
+                                          font=("Courier", 11),
+                                          text_color="#88ddaa", anchor="w")
+                    lbl_sf.grid(row=0, column=1, padx=12, pady=5, sticky="ew")
+                    # Full path shown on second row in smaller grey text
+                    rf_sf2 = ctk.CTkFrame(exsim_frame, fg_color="#111111", corner_radius=0)
+                    rf_sf2.pack(fill="x")
+                    ctk.CTkLabel(rf_sf2, text=slip_file_val,
+                                 font=("Courier", 9),
+                                 text_color="#555555", anchor="w"
+                                 ).pack(anchor="w", padx=12, pady=(0, 4))
+
         _section_label(scroll, "Linked Files")
         links_frame = ctk.CTkFrame(
             scroll, fg_color="#222222",

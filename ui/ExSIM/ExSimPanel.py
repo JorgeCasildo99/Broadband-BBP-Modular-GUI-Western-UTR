@@ -14,6 +14,198 @@ from ui.PanelResources.StationPanel import StationPanel
 from ui.GravesAndPitarka.ChinoHillsPanel import ChinoHillsPanel
 
 
+class WSLFileBrowser(ctk.CTkToplevel):
+    """
+    A file browser dialog that navigates the WSL filesystem.
+    Shows folders and files separately. Double-click a folder to enter it,
+    double-click a file to select it. Filters by extension if provided.
+
+    Usage:
+        WSLFileBrowser(
+            master     = self,
+            start_path = "/home/black/bbp_data/outdata",
+            extension  = ".srf",
+            title      = "Select SRF File",
+            on_select  = callback_fn   # called with the full WSL path
+        )
+    """
+
+    def __init__(self, master, start_path, on_select,
+                 extension=None, title="Browse WSL Files"):
+        super().__init__(master)
+        self._on_select  = on_select
+        self._extension  = extension
+        self._cur_path   = start_path
+
+        self.title(title)
+        self.geometry("700x480")
+        self.configure(fg_color="#1a1a1a")
+        self.resizable(True, True)
+        self.transient(master)
+
+        self._build_ui()
+        self._load_dir(start_path)
+
+        # Center on parent and grab after window is visible
+        self.update_idletasks()
+        px = master.winfo_rootx()
+        py = master.winfo_rooty()
+        pw = master.winfo_width()
+        ph = master.winfo_height()
+        w, h = 700, 480
+        self.geometry(f"{w}x{h}+{px + (pw-w)//2}+{py + (ph-h)//2}")
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        self.after(100, self.grab_set)
+
+    def _build_ui(self):
+        # Path bar
+        top = ctk.CTkFrame(self, fg_color="#111111", height=40)
+        top.pack(fill="x", padx=8, pady=(8, 4))
+        top.pack_propagate(False)
+
+        ctk.CTkButton(
+            top, text="↑ Up", width=60, height=28,
+            fg_color="#333333", hover_color="#444444",
+            command=self._go_up
+        ).pack(side="left", padx=(6, 4), pady=6)
+
+        self.lbl_path = ctk.CTkLabel(
+            top, text="", font=("Courier", 11),
+            text_color="#aaaaaa", anchor="w"
+        )
+        self.lbl_path.pack(side="left", fill="x", expand=True, padx=4)
+
+        # Folder list
+        mid = ctk.CTkFrame(self, fg_color="transparent")
+        mid.pack(fill="both", expand=True, padx=8, pady=4)
+        mid.grid_columnconfigure(0, weight=1)
+        mid.grid_columnconfigure(1, weight=2)
+        mid.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(mid, text="Folders", font=(res.FONT_LABEL[0], 11, "bold"),
+                     text_color="#aaaacc").grid(row=0, column=0, sticky="w", padx=4)
+        ctk.CTkLabel(mid, text=f"Files ({self._extension or 'all'})",
+                     font=(res.FONT_LABEL[0], 11, "bold"),
+                     text_color="#aaccaa").grid(row=0, column=1, sticky="w", padx=4)
+
+        # Folder listbox
+        folder_frame = ctk.CTkFrame(mid, fg_color="#111122")
+        folder_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4))
+        self.lb_folders = ctk.CTkScrollableFrame(folder_frame, fg_color="#111122")
+        self.lb_folders.pack(fill="both", expand=True)
+
+        # File listbox
+        file_frame = ctk.CTkFrame(mid, fg_color="#112211")
+        file_frame.grid(row=1, column=1, sticky="nsew")
+        self.lb_files = ctk.CTkScrollableFrame(file_frame, fg_color="#112211")
+        self.lb_files.pack(fill="both", expand=True)
+
+        # Bottom bar
+        bot = ctk.CTkFrame(self, fg_color="#111111", height=50)
+        bot.pack(fill="x", padx=8, pady=(4, 8))
+        bot.pack_propagate(False)
+
+        self.lbl_selected = ctk.CTkLabel(
+            bot, text="No file selected",
+            font=("Courier", 10), text_color="#777777", anchor="w"
+        )
+        self.lbl_selected.pack(side="left", fill="x", expand=True, padx=8, pady=12)
+
+        ctk.CTkButton(
+            bot, text="Cancel", width=80, height=32,
+            fg_color="#333333", hover_color="#444444",
+            command=self.destroy
+        ).pack(side="right", padx=(4, 8), pady=8)
+
+        self.btn_select = ctk.CTkButton(
+            bot, text="Select", width=100, height=32,
+            fg_color="#1a4a1a", hover_color="#2a6a2a",
+            text_color="#88dd88", state="disabled",
+            command=self._confirm_select
+        )
+        self.btn_select.pack(side="right", padx=4, pady=8)
+
+        self._selected_path = None
+
+    def _load_dir(self, path):
+        self._cur_path = path
+        self.lbl_path.configure(text=path)
+        self._selected_path = None
+        self.lbl_selected.configure(text="No file selected")
+        self.btn_select.configure(state="disabled")
+
+        # Clear existing buttons
+        for widget in self.lb_folders.winfo_children():
+            widget.destroy()
+        for widget in self.lb_files.winfo_children():
+            widget.destroy()
+
+        ok, folders, files, err = WSLBridge.list_wsl_dir_detailed(path)
+        if not ok:
+            ctk.CTkLabel(self.lb_folders,
+                         text=f"Error: {err}",
+                         text_color="#ff6666").pack(anchor="w", padx=6, pady=2)
+            return
+
+        # Render folders
+        for folder in folders:
+            ctk.CTkButton(
+                self.lb_folders,
+                text=f"📁 {folder}",
+                fg_color="transparent", hover_color="#2a2a4a",
+                text_color="#aaaadd", anchor="w", height=28,
+                font=(res.FONT_LABEL[0], 10),
+                command=lambda f=folder: self._load_dir(f"{self._cur_path}/{f}")
+            ).pack(fill="x", padx=2, pady=1)
+
+        if not folders:
+            ctk.CTkLabel(self.lb_folders,
+                         text="(no subfolders)",
+                         text_color="#555555",
+                         font=(res.FONT_LABEL[0], 9)).pack(anchor="w", padx=6, pady=4)
+
+        # Render files filtered by extension
+        shown = [f for f in files
+                 if self._extension is None or f.endswith(self._extension)]
+
+        for fname in shown:
+            full_path = f"{self._cur_path}/{fname}"
+            ctk.CTkButton(
+                self.lb_files,
+                text=f"📄 {fname}",
+                fg_color="transparent", hover_color="#1a3a1a",
+                text_color="#aaddaa", anchor="w", height=28,
+                font=(res.FONT_LABEL[0], 10),
+                command=lambda p=full_path, n=fname: self._select_file(p, n)
+            ).pack(fill="x", padx=2, pady=1)
+
+        if not shown:
+            ext_txt = self._extension or "files"
+            ctk.CTkLabel(self.lb_files,
+                         text=f"(no {ext_txt} here)",
+                         text_color="#555555",
+                         font=(res.FONT_LABEL[0], 9)).pack(anchor="w", padx=6, pady=4)
+
+    def _go_up(self):
+        parent = "/".join(self._cur_path.rstrip("/").rsplit("/", 1)[:-1])
+        if parent:
+            self._load_dir(parent)
+
+    def _select_file(self, full_path, fname):
+        self._selected_path = full_path
+        self.lbl_selected.configure(
+            text=fname, text_color="#88dd88"
+        )
+        self.btn_select.configure(state="normal")
+
+    def _confirm_select(self):
+        if self._selected_path and self._on_select:
+            self._on_select(self._selected_path)
+        self.destroy()
+
+
 class ExSimPanel(ctk.CTkFrame):
     """
     Configuration panel for the ExSIM stochastic broadband method.
@@ -620,6 +812,19 @@ class ExSimPanel(ctk.CTkFrame):
             hover_color="#444444",
             command=self._browse_slip_file
         ).pack(side="left")
+
+        ctk.CTkButton(
+            self.slip_file_row,
+            text="⚙ Extract from SRF",
+            height=28, width=150,
+            fg_color="#1a3a2a",
+            hover_color="#2a5a3a",
+            border_width=1,
+            border_color="#336644",
+            text_color="#88ddaa",
+            font=(res.FONT_LABEL[0], 10),
+            command=self._extract_from_srf
+        ).pack(side="left", padx=(8, 0))
 
         # ── SLIP INFO CARD (collapsible) ──
         self._make_collapsible_info_card(
@@ -2003,6 +2208,148 @@ class ExSimPanel(ctk.CTkFrame):
             self.ent_slip_file.delete(0, "end")
             self.ent_slip_file.insert(0, path)
 
+    def _extract_from_srf(self):
+        """
+        Opens a WSL file browser dialog so the user can navigate and pick
+        an .srf file. Extracts slip weights, normalizes, writes output,
+        and auto-fills the slip file path + DL/DW fields.
+        """
+        def on_srf_selected(srf_wsl_path):
+            import tkinter.messagebox as mb
+            import os
+
+            ok, srf_content = WSLBridge.read_wsl_file(srf_wsl_path)
+            if not ok or not srf_content:
+                mb.showerror("SRF Read Error",
+                             f"Could not read:\n{srf_wsl_path}",
+                             parent=self.winfo_toplevel())
+                return
+
+            try:
+                nstk, ndip, slip_values = self._parse_srf_slip(srf_content)
+            except Exception as e:
+                mb.showerror("SRF Parse Error", str(e),
+                             parent=self.winfo_toplevel())
+                return
+
+            if not slip_values:
+                mb.showerror("SRF Parse Error",
+                             "No slip values found in SRF file.",
+                             parent=self.winfo_toplevel())
+                return
+
+            max_slip = max(slip_values)
+            if max_slip == 0:
+                mb.showerror("SRF Error",
+                             "All slip values are zero — cannot normalize.",
+                             parent=self.winfo_toplevel())
+                return
+
+            normalized   = [v / max_slip for v in slip_values]
+            srf_dir      = "/".join(srf_wsl_path.rsplit("/", 1)[:-1])
+            srf_base     = os.path.splitext(srf_wsl_path.rsplit("/", 1)[-1])[0]
+            out_path     = f"{srf_dir}/{srf_base}_slip_weights.txt"
+            file_content = "".join(f"{v:.6f}\n" for v in normalized)
+
+            ok_w, err = WSLBridge.write_wsl_file(out_path, file_content)
+            if not ok_w:
+                mb.showerror("Write Error", err,
+                             parent=self.winfo_toplevel())
+                return
+
+            self.ent_slip_file.delete(0, "end")
+            self.ent_slip_file.insert(0, out_path)
+
+            try:
+                fault_len = float(self.src_inputs["FAULT_LENGTH"].get())
+                fault_wid = float(self.src_inputs["FAULT_WIDTH"].get())
+                dl = round(fault_len / nstk, 4)
+                dw = round(fault_wid / ndip, 4)
+                if "DL" in self.adv_exsim_inputs:
+                    self.adv_exsim_inputs["DL"].delete(0, "end")
+                    self.adv_exsim_inputs["DL"].insert(0, str(dl))
+                if "DW" in self.adv_exsim_inputs:
+                    self.adv_exsim_inputs["DW"].delete(0, "end")
+                    self.adv_exsim_inputs["DW"].insert(0, str(dw))
+                dl_dw_msg = f"  DL={dl} km, DW={dw} km auto-filled."
+            except (ValueError, KeyError):
+                dl_dw_msg = "  (DL/DW not auto-filled — set fault dimensions first.)"
+
+            self.help_label.configure(
+                text=(
+                    f"SRF extracted: {len(normalized)} subfaults "
+                    f"({nstk}×{ndip}). "
+                    f"Saved: {srf_base}_slip_weights.txt."
+                    f"{dl_dw_msg}"
+                ),
+                text_color=res.COLOR_SUCCESS
+            )
+
+        home = WSLBridge.get_wsl_home()
+        WSLFileBrowser(
+            master     = self.winfo_toplevel(),
+            start_path = f"{home}/bbp_data/outdata",
+            extension  = ".srf",
+            title      = "Select SRF File",
+            on_select  = on_srf_selected
+        )
+
+    def _parse_srf_slip(self, srf_content):
+        """
+        Parses a BBP Genslip SRF file and returns (nstk, ndip, slip_values).
+
+        Line detection by value count:
+          10 values = Line A (point header) — slip1 at index [8] is CONSTANT, skip
+          7  values = Line B (nt/peak line)  — PEAK1 at index [1] is real slip rate
+          other     = Line C (time series)   — ignore
+        """
+        lines = srf_content.splitlines()
+        nstk = ndip = None
+        slip_values = []
+        in_points = False
+        prev_was_A = False
+
+        for raw in lines:
+            parts = raw.strip().split()
+            if not parts:
+                continue
+
+            if not in_points and len(parts) == 6:
+                try:
+                    nstk_try = int(parts[2])
+                    ndip_try = int(parts[3])
+                    if 1 <= nstk_try <= 1000 and 1 <= ndip_try <= 1000:
+                        nstk, ndip = nstk_try, ndip_try
+                except (ValueError, IndexError):
+                    pass
+
+            if raw.strip().startswith("POINTS"):
+                in_points = True
+                continue
+
+            if not in_points:
+                continue
+
+            if len(parts) == 10:
+                prev_was_A = True
+            elif len(parts) == 7 and prev_was_A:
+                slip_values.append(float(parts[1]))
+                prev_was_A = False
+            else:
+                prev_was_A = False
+
+        if nstk is None or ndip is None:
+            raise ValueError(
+                "Could not read PLANE header (nstk, ndip) from SRF file."
+            )
+        if len(slip_values) != nstk * ndip:
+            raise ValueError(
+                f"Expected {nstk * ndip} slip values ({nstk}×{ndip}) "
+                f"but found {len(slip_values)}."
+            )
+
+        return nstk, ndip, slip_values
+
     def _write_adv_exsim_to_par(self):
         """
         Writes the current Advanced Path Parameters into labasin_exsim.par
@@ -2325,10 +2672,15 @@ class ExSimPanel(ctk.CTkFrame):
         for seg_i, (r_val, d_val) in enumerate(dr_snap_segs):
             src_lines.append(f"# EXSIM_DR_SEG{seg_i+1} = {r_val} {d_val}\n")
 
-        # islipweight
+        # islipweight + slip file path
         slip_mode_snap = self.islipweight_var.get() if hasattr(self, "islipweight_var") else "Random (1)"
         islip_map = {"Uniform (-1)": "-1", "From file (0)": "0", "Random (1)": "1"}
-        src_lines.append(f"# EXSIM_ISLIPWEIGHT = {islip_map.get(slip_mode_snap, '1')}\n")
+        islip_num = islip_map.get(slip_mode_snap, "1")
+        src_lines.append(f"# EXSIM_ISLIPWEIGHT = {islip_num}\n")
+        if islip_num == "0" and hasattr(self, "ent_slip_file"):
+            slip_path_snap = self.ent_slip_file.get().strip()
+            if slip_path_snap:
+                src_lines.append(f"# EXSIM_SLIP_FILE = {slip_path_snap}\n")
 
         src_content = "".join(src_lines)
 
