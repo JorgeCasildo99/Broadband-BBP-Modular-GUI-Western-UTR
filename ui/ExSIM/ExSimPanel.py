@@ -781,6 +781,20 @@ class ExSimPanel(ctk.CTkFrame):
         )
         self.slip_mode_menu.pack(side="left")
 
+        # "Generate islipweight" button — always visible in the slip section
+        ctk.CTkButton(
+            slip_row,
+            text="⚙ Generate islipweight",
+            width=180, height=28,
+            fg_color="#1a2a3a",
+            hover_color="#2a3a4a",
+            border_width=1,
+            border_color="#334455",
+            text_color="#88aadd",
+            font=(res.FONT_LABEL[0], 10),
+            command=self._open_genslip_panel
+        ).pack(side="left", padx=(12, 0))
+
         # File picker row — child of a wrapper placed directly below the dropdown.
         # Using a wrapper means pack()/pack_forget() positions it right here,
         # not at the bottom of adv_exsim_content.
@@ -2196,6 +2210,104 @@ class ExSimPanel(ctk.CTkFrame):
         else:
             self.slip_file_row.pack_forget()
             self._slip_file_wrapper.pack_forget()
+
+    def _open_genslip_panel(self):
+        """
+        Validates that all fault geometry fields are filled and at least
+        one station exists, then opens GenslipPanel to run Genslip and
+        auto-generate the islipweight file.
+        """
+        from ui.ExSIM.GenslipPanel import GenslipPanel
+
+        # --- Validate fault geometry fields ---
+        required_keys = [
+            "MAGNITUDE", "FAULT_LENGTH", "FAULT_WIDTH", "DEPTH_TO_TOP",
+            "STRIKE", "DIP", "RAKE", "HYPO_ALONG_STK", "HYPO_DOWN_DIP",
+            "LON_TOP_CENTER", "LAT_TOP_CENTER"
+        ]
+        missing = []
+        params  = {}
+        for key in required_keys:
+            if key not in self.src_inputs:
+                missing.append(key)
+                continue
+            val = self.src_inputs[key].get().strip()
+            if not val:
+                missing.append(key)
+            else:
+                params[key] = val
+
+        if missing:
+            self.help_label.configure(
+                text=f"Cannot generate islipweight — missing fields: "
+                     f"{', '.join(missing)}",
+                text_color=res.COLOR_ERROR
+            )
+            return
+
+        # --- Validate at least one station ---
+        stations = list(self.manual_station_list)
+        module_stations = self.station_module.get_stations() \
+            if hasattr(self, "station_module") else []
+        all_stations = stations + [
+            s for s in module_stations if s not in stations
+        ]
+
+        if not all_stations:
+            self.help_label.configure(
+                text="Cannot generate islipweight — add at least one station first.",
+                text_color=res.COLOR_ERROR
+            )
+            return
+
+        # --- Validate experimenter / exp name ---
+        experimenter = self.ent_experimenter.get().strip()
+        exp_name     = self.ent_exp_name.get().strip()
+        if not experimenter or not exp_name:
+            self.help_label.configure(
+                text="Cannot generate islipweight — set Experimenter and "
+                     "Experiment Name first.",
+                text_color=res.COLOR_ERROR
+            )
+            return
+
+        # --- Read DL/DW and SEED ---
+        dl   = self.adv_exsim_inputs["DL"].get().strip()   \
+               if "DL" in self.adv_exsim_inputs else "0.1"
+        dw   = self.adv_exsim_inputs["DW"].get().strip()   \
+               if "DW" in self.adv_exsim_inputs else "0.1"
+        seed = self.ent_seed.get().strip() or "1234567"
+
+        # --- Callback: auto-fill ExSIM fields when done ---
+        def on_done(slip_path, dl_out, dw_out):
+            self.islipweight_var.set("From file (0)")
+            self._on_islipweight_change("From file (0)")
+            self.ent_slip_file.delete(0, "end")
+            self.ent_slip_file.insert(0, slip_path)
+            if "DL" in self.adv_exsim_inputs:
+                self.adv_exsim_inputs["DL"].delete(0, "end")
+                self.adv_exsim_inputs["DL"].insert(0, str(dl_out))
+            if "DW" in self.adv_exsim_inputs:
+                self.adv_exsim_inputs["DW"].delete(0, "end")
+                self.adv_exsim_inputs["DW"].insert(0, str(dw_out))
+            self.help_label.configure(
+                text=f"islipweight file generated and loaded: "
+                     f"{slip_path.rsplit('/', 1)[-1]}",
+                text_color=res.COLOR_SUCCESS
+            )
+
+        # --- Open the panel ---
+        GenslipPanel(
+            master       = self.winfo_toplevel(),
+            params       = params,
+            stations     = all_stations,
+            experimenter = experimenter,
+            exp_name     = exp_name,
+            dlen         = dl,
+            dwid         = dw,
+            seed         = seed,
+            on_done      = on_done
+        )
 
     def _browse_slip_file(self):
         """Opens a file dialog to select the slip weights text file."""
