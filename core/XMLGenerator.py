@@ -52,6 +52,24 @@ def _genslip_block(src_path, src_name, srf_name):
 \t\t</BBP_Module>"""
 
 
+def _irikura_gen_srf_block(src_path, src_name, srf_name):
+    """IrikuraGenSrf — rupture generator for Irikura Recipe Method 1.
+    Replaces Genslip as the first module; everything downstream is identical."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<n>IrikuraGenSrf</n>
+\t\t\t<staged_files>
+\t\t\t\t<file>{GF_PATH}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{GF_FILE}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{srf_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
 def _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name):
     return f"""\t\t<BBP_Module>
 \t\t\t<name>Jbsim</name>
@@ -261,6 +279,59 @@ def _generate_full_xml(base_name, src_path, stl_path, acc_output=False):
     return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
 
 
+def _generate_irikura1_full_xml(base_name, src_path, stl_path, acc_output=False):
+    """
+    Irikura Recipe 1 — Full Pipeline.
+    IrikuraGenSrf → Jbsim → Hfsims → Match → Plot_Map → PlotSeis → RotD100 → FAS → GenHTML
+    Identical to GP full pipeline but replaces Genslip with IrikuraGenSrf.
+    """
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+    acc_value = "True" if acc_output else "False"
+
+    modules = "\n".join([
+        _irikura_gen_srf_block(src_path, src_name, srf_name),
+        _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _hfsims_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _match_block(stl_path, stl_name, acc_value),
+        _plot_map_block(src_path, stl_path, src_name, stl_name),
+        _plotseis_block(src_path, stl_path, src_name, stl_name),
+        _rotd100_block(stl_path, stl_name),
+        _fas_block(stl_path, stl_name),
+        _genhtml_block(src_path, stl_path, src_name, stl_name),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_irikura1_quick_xml(base_name, src_path, stl_path, acc_output=False):
+    """Irikura Recipe 1 — Quick Run (IrikuraGenSrf + Jbsim + Hfsims + Match)."""
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+    acc_value = "True" if acc_output else "False"
+
+    modules = "\n".join([
+        _irikura_gen_srf_block(src_path, src_name, srf_name),
+        _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _hfsims_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _match_block(stl_path, stl_name, acc_value),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_irikura1_rupture_xml(base_name, src_path, stl_path, acc_output=False):
+    """Irikura Recipe 1 — Rupture Only (IrikuraGenSrf alone)."""
+    srf_name = f"{base_name}.srf"
+    src_name = f"{base_name}.src"
+
+    modules = _irikura_gen_srf_block(src_path, src_name, srf_name)
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
 def _generate_quick_xml(base_name, src_path, stl_path, acc_output=False):
     """
     Quick Run — 4 core modules only.
@@ -333,22 +404,21 @@ def generate_xml(base_name, src_path, stl_path,
     Builds the BBP XML options file for the selected simulation profile.
 
     Args:
-        base_name      (str)  : Experiment base name e.g. "john_exp1"
-        src_path       (str)  : Full WSL path to the .src file
-        stl_path       (str)  : Full WSL path to the .stl file
-        acc_output     (bool) : If True, Match outputs acceleration (GP only)
-        profile        (str)  : "full", "quick", "rupture", or "custom"
-        custom_modules (list) : Module names for custom profile (GP only)
-        method         (str)  : "GP" or "EXSIM" — selects which module
-                                 pipeline to build. ExSIM only supports
-                                 the "full" profile (no quick/rupture/custom).
-
-    Returns:
-        str: The complete XML content as a string.
+        method (str): "GP", "EXSIM", or "IRIKURA1"
+        profile (str): "full", "quick", "rupture", or "custom"
     """
     if method == "EXSIM":
         return _generate_exsim_xml(base_name, src_path, stl_path, acc_output)
 
+    if method == "IRIKURA1":
+        if profile == "quick":
+            return _generate_irikura1_quick_xml(base_name, src_path, stl_path, acc_output)
+        elif profile == "rupture":
+            return _generate_irikura1_rupture_xml(base_name, src_path, stl_path, acc_output)
+        else:
+            return _generate_irikura1_full_xml(base_name, src_path, stl_path, acc_output)
+
+    # GP (default)
     if profile == "quick":
         return _generate_quick_xml(base_name, src_path, stl_path, acc_output)
     elif profile == "rupture":
@@ -404,6 +474,29 @@ BBP_MODULES_QUICK = [
 
 BBP_MODULES_RUPTURE = [
     ("Genslip", "Generating slip distribution on fault plane..."),
+]
+
+BBP_MODULES_IRIKURA1_FULL = [
+    ("IrikuraGenSrf", "Generating rupture model (Irikura Recipe 1)..."),
+    ("Jbsim",         "Computing low-frequency seismograms..."),
+    ("Hfsims",        "Computing high-frequency seismograms..."),
+    ("Match",         "Combining LF + HF broadband seismograms..."),
+    ("Plot_Map",      "Generating station map..."),
+    ("PlotSeis",      "Plotting seismograms..."),
+    ("RotD100",       "Computing RotD50/100 response spectra..."),
+    ("FAS",           "Computing Fourier Amplitude Spectra..."),
+    ("GenHTML",       "Generating HTML report..."),
+]
+
+BBP_MODULES_IRIKURA1_QUICK = [
+    ("IrikuraGenSrf", "Generating rupture model (Irikura Recipe 1)..."),
+    ("Jbsim",         "Computing low-frequency seismograms..."),
+    ("Hfsims",        "Computing high-frequency seismograms..."),
+    ("Match",         "Combining LF + HF broadband seismograms..."),
+]
+
+BBP_MODULES_IRIKURA1_RUPTURE = [
+    ("IrikuraGenSrf", "Generating rupture model (Irikura Recipe 1)..."),
 ]
 
 BBP_MODULES_EXSIM = [
@@ -467,12 +560,24 @@ def get_modules_for_profile(profile, custom_modules=None, method="GP"):
     if method == "EXSIM":
         return BBP_MODULES_EXSIM
 
+    if method == "IRIKURA1":
+        if profile == "quick":
+            return BBP_MODULES_IRIKURA1_QUICK
+        elif profile == "rupture":
+            return BBP_MODULES_IRIKURA1_RUPTURE
+        elif profile == "custom" and custom_modules:
+            all_desc = {m: d for m, d in BBP_MODULES_IRIKURA1_FULL}
+            return [(m, all_desc.get(m, f"Running {m}..."))
+                    for m in custom_modules if m in all_desc]
+        else:
+            return BBP_MODULES_IRIKURA1_FULL
+
+    # GP (default)
     if profile == "quick":
         return BBP_MODULES_QUICK
     elif profile == "rupture":
         return BBP_MODULES_RUPTURE
     elif profile == "custom" and custom_modules:
-        # Build description list from full module list filtered by custom selection
         all_desc = {m: d for m, d in BBP_MODULES_FULL}
         return [(m, all_desc.get(m, f"Running {m}..."))
                 for m in custom_modules if m in all_desc]

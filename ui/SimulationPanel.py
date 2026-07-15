@@ -88,15 +88,21 @@ class SimulationPanel(ctk.CTkToplevel):
             text_color="white"
         ).pack(side="left", padx=25, pady=15)
 
-        if self._method in ("GP", "EXSIM"):
+        if self._method in ("GP", "EXSIM", "IRIKURA1"):
             method_colors = {
-                "GP"   : ("#0a2a3a", "#3b8ed0"),
-                "EXSIM": ("#3a1a00", "#ffaa44"),
+                "GP"      : ("#0a2a3a", "#3b8ed0"),
+                "EXSIM"   : ("#3a1a00", "#ffaa44"),
+                "IRIKURA1": ("#0a2a0a", "#22aa55"),
+            }
+            label_text = {
+                "GP"      : "GP",
+                "EXSIM"   : "EXSIM",
+                "IRIKURA1": "IRIKURA 1",
             }
             bg_color, fg_color = method_colors[self._method]
             ctk.CTkLabel(
                 title_frame,
-                text=self._method,
+                text=label_text[self._method],
                 font=(res.FONT_LABEL[0], 12, "bold"),
                 text_color=fg_color,
                 fg_color=bg_color,
@@ -232,14 +238,15 @@ class SimulationPanel(ctk.CTkToplevel):
         )
         self.btn_retry.pack(side="right", padx=(0, 10), pady=12)
 
-        # Back to Dashboard — always visible, lets user exit on failure
+        # Back to Dashboard — disabled during simulation, enabled when done or failed
         self.btn_dashboard = ctk.CTkButton(
             self.bottom_frame,
             text="← Back to Dashboard",
             height=36,
-            fg_color="#333333",
-            hover_color="#444444",
-            text_color="white",
+            fg_color="#222222",
+            hover_color="#333333",
+            text_color="#666666",
+            state="disabled",
             command=self._go_to_dashboard
         )
         self.btn_dashboard.pack(side="left", padx=(10, 0), pady=12)
@@ -453,6 +460,12 @@ class SimulationPanel(ctk.CTkToplevel):
             self._log("=" * 60)
 
             self.btn_results.configure(state="normal")
+            self.btn_dashboard.configure(
+                state="normal",
+                fg_color="#333333",
+                hover_color="#444444",
+                text_color="white"
+            )
             self._restore_par_defaults()
 
         else:
@@ -483,6 +496,12 @@ class SimulationPanel(ctk.CTkToplevel):
         self._log("=" * 60)
 
         self.btn_retry.configure(state="normal")
+        self.btn_dashboard.configure(
+            state="normal",
+            fg_color="#333333",
+            hover_color="#444444",
+            text_color="white"
+        )
         self._restore_par_defaults()
 
     # ------------------------------------------------------------------

@@ -23,6 +23,7 @@ from core.WSLBridge import WSLBridge
 import core.Resources as res
 from ui.Dashboard import DashboardPanel
 from ui.GravesAndPitarka.GravesAndPitarkaPanel import GravesAndPitarkaPanel
+from ui.Irikura.IrikuraPanel                   import IrikuraPanel
 from ui.ExSIM.ExSimPanel             import ExSimPanel
 from ui.SimulationPanel import SimulationPanel
 from ui.results.ResultsPanel        import ResultsPanel
@@ -239,6 +240,7 @@ class MainPanel(ctk.CTk):
             self.container,
             open_gp_callback         = self.show_rupture_module,
             open_exsim_callback      = self.show_exsim_module,
+            open_irikura1_callback   = self.show_irikura_module,
             open_results_callback    = self.open_results_history,
             open_config_callback     = self.open_configuration_panel,
             open_validation_callback = self.open_validation_panel
@@ -413,6 +415,64 @@ class MainPanel(ctk.CTk):
         )
         self.exsim_module.pack(fill="both", expand=True)
 
+    def show_irikura_module(self):
+        """
+        Switches from Dashboard to IrikuraPanel.
+        Same structure as show_rupture_module but with Irikura green theme.
+        """
+        for widget in self.container.winfo_children():
+            widget.destroy()
+
+        nav_bar = ctk.CTkFrame(
+            self.container, height=44, fg_color="#111111", corner_radius=6
+        )
+        nav_bar.pack(fill="x", pady=(0, 6))
+        nav_bar.pack_propagate(False)
+
+        ctk.CTkButton(
+            nav_bar,
+            text="← Back to Dashboard",
+            width=160, height=30,
+            fg_color="transparent",
+            border_width=1, border_color="#444444",
+            text_color="white", hover_color="#2a2a2a",
+            command=self.load_dashboard
+        ).pack(side="left", padx=10, pady=7)
+
+        title_frame = ctk.CTkFrame(nav_bar, fg_color="transparent")
+        title_frame.pack(side="left", expand=True, fill="both")
+
+        ctk.CTkLabel(
+            title_frame,
+            text="IRIKURA RECIPE 1",
+            font=(res.FONT_LABEL[0], 13, "bold"),
+            text_color="#22aa55"
+        ).pack(side="left", padx=(0, 6), pady=7)
+
+        ctk.CTkLabel(
+            title_frame,
+            text="Irikura & Miyake (2011)  —  Broadband Ground Motion Simulation  —  LABasin500",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="gray"
+        ).pack(side="left", pady=7)
+
+        session_name = os.path.basename(AppConfig.current_session_folder) \
+            if AppConfig.current_session_folder else "No session"
+        ctk.CTkLabel(
+            nav_bar,
+            text=f"Session: {session_name}",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="gray"
+        ).pack(side="right", padx=15, pady=7)
+
+        AppConfig.simulation_method = "IRIKURA1"
+
+        self.irikura_module = IrikuraPanel(
+            self.container,
+            on_run_callback=self.show_simulation_panel
+        )
+        self.irikura_module.pack(fill="both", expand=True)
+
     def show_simulation_panel(self):
         """
         Called when RUN BBP is clicked in RupturePanel.
@@ -457,9 +517,12 @@ class MainPanel(ctk.CTk):
         """
         if method == "GP":
             self.show_rupture_module()
-            # gp_module is set by show_rupture_module
             if hasattr(self, "gp_module") and self.gp_module:
                 self.gp_module.load_from_src(params, stations)
+        elif method == "IRIKURA1":
+            self.show_irikura_module()
+            if hasattr(self, "irikura_module") and self.irikura_module:
+                self.irikura_module.load_from_src(params, stations)
         elif method == "EXSIM":
             self.show_exsim_module()
             if hasattr(self, "exsim_module") and self.exsim_module:

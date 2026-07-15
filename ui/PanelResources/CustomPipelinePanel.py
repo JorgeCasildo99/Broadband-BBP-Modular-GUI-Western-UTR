@@ -144,28 +144,151 @@ EXECUTION_ORDER = [
 
 class CustomPipelinePanel(ctk.CTkToplevel):
 
-    def __init__(self, master, on_confirm=None):
+    def __init__(self, master, on_confirm=None, method="GP"):
         super().__init__(master)
 
         self._on_confirm   = on_confirm
-        self._selected     = {"Genslip"}
+        self._method       = method
         self._box_coords   = {}
         self._resize_timer = None
 
-        self.title("Custom Pipeline Selector")
+        # For Irikura, the rupture generator is IrikuraGenSrf not Genslip.
+        # We swap the module definitions at runtime so the panel shows
+        # and behaves correctly without duplicating any code.
+        self._rupture_key = "Genslip" if method == "GP" else "IrikuraGenSrf"
+
+        # Build the active module definitions for this method
+        self._modules        = self._build_modules()
+        self._arrows         = self._build_arrows()
+        self._module_pos     = self._build_positions()
+        self._execution_order = self._build_order()
+
+        # Start with only the rupture generator selected (always required)
+        self._selected = {self._rupture_key}
+
+        self.title(
+            "Custom Pipeline Selector — Graves & Pitarka"
+            if method == "GP" else
+            "Custom Pipeline Selector — Irikura Recipe 1"
+        )
         self.configure(fg_color="#0d0d0d")
         self.resizable(True, True)
         self.transient(master)
 
-        # Maximize BEFORE building UI so canvas gets correct size
         try:
             self.state("zoomed")
         except Exception:
             self.geometry("1400x820")
 
         self._build_ui()
-        # Draw after window fully renders at maximized size
         self.after(250, self._draw_all)
+
+    def _build_modules(self):
+        """Returns module definitions with the correct rupture generator name."""
+        rk = self._rupture_key
+        rk_desc = (
+            "Generates slip distribution\nacross fault plane.\nProduces .srf + rupture map."
+            if self._method == "GP" else
+            "Irikura recipe rupture model.\nGenerates slip distribution\nProduces .srf + rupture map."
+        )
+        return {
+            rk: {
+                "role"    : "Source Generator",
+                "desc"    : rk_desc,
+                "req_text": "Always required",
+                "requires": [],
+                "always"  : True,
+            },
+            "Jbsim": {
+                "role"    : "LF Synthesis  0–1 Hz",
+                "desc"    : "Low frequency seismograms\nusing deterministic wave\npropagation physics.",
+                "req_text": f"Requires: {rk}",
+                "requires": [rk],
+                "always"  : False,
+            },
+            "Hfsims": {
+                "role"    : "HF Synthesis  1–10+ Hz",
+                "desc"    : "High frequency seismograms\nusing stochastic approach\nfor crustal scattering.",
+                "req_text": f"Requires: {rk}",
+                "requires": [rk],
+                "always"  : False,
+            },
+            "Plot_Map": {
+                "role"    : "Map — Independent",
+                "desc"    : "Geographic station and\nfault trace map PNG.\nIndependent of LF/HF.",
+                "req_text": f"Requires: {rk}",
+                "requires": [rk],
+                "always"  : False,
+            },
+            "Match": {
+                "role"    : "Broadband Merge",
+                "desc"    : "Merges LF + HF using\ncosine taper at ~1 Hz\ncrossover frequency.",
+                "req_text": "Requires: Jbsim + Hfsims",
+                "requires": ["Jbsim", "Hfsims"],
+                "always"  : False,
+            },
+            "PlotSeis": {
+                "role"    : "Seismogram Plots",
+                "desc"    : "Velocity + acceleration\nseismogram plots per\nstation as PNG files.",
+                "req_text": "Requires: Match",
+                "requires": ["Match"],
+                "always"  : False,
+            },
+            "RotD100": {
+                "role"    : "Response Spectra",
+                "desc"    : "RotD50 and RotD100\nresponse spectra for\neach station.",
+                "req_text": "Requires: Match",
+                "requires": ["Match"],
+                "always"  : False,
+            },
+            "FAS": {
+                "role"    : "Fourier Spectrum",
+                "desc"    : "Fourier Amplitude\nSpectrum per station\n(NS, EW, Smoothed EAS).",
+                "req_text": "Requires: Match",
+                "requires": ["Match"],
+                "always"  : False,
+            },
+            "GenHTML": {
+                "role"    : "HTML Report",
+                "desc"    : "Complete HTML summary\nreport with all results\nand linked output files.",
+                "req_text": "Requires: Match",
+                "requires": ["Match"],
+                "always"  : False,
+            },
+        }
+
+    def _build_arrows(self):
+        rk = self._rupture_key
+        return [
+            (rk,      "Jbsim"),
+            (rk,      "Hfsims"),
+            (rk,      "Plot_Map"),
+            ("Jbsim", "Match"),
+            ("Hfsims","Match"),
+            ("Match", "PlotSeis"),
+            ("Match", "RotD100"),
+            ("Match", "FAS"),
+            ("Match", "GenHTML"),
+        ]
+
+    def _build_positions(self):
+        rk = self._rupture_key
+        return {
+            rk          : (0.10, 0.46),
+            "Jbsim"     : (0.30, 0.25),
+            "Hfsims"    : (0.30, 0.60),
+            "Plot_Map"  : (0.30, 0.86),
+            "Match"     : (0.52, 0.42),
+            "PlotSeis"  : (0.74, 0.16),
+            "RotD100"   : (0.74, 0.38),
+            "FAS"       : (0.74, 0.60),
+            "GenHTML"   : (0.74, 0.82),
+        }
+
+    def _build_order(self):
+        rk = self._rupture_key
+        return [rk, "Jbsim", "Hfsims", "Match",
+                "Plot_Map", "PlotSeis", "RotD100", "FAS", "GenHTML"]
 
     def _on_ready(self):
         try:
@@ -204,7 +327,9 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             bar,
-            text="Graves & Pitarka  —  LA Basin",
+            text="Graves & Pitarka  —  LA Basin"
+                 if self._method == "GP" else
+                 "Irikura Recipe 1  —  LA Basin",
             font=(res.FONT_LABEL[0], 11),
             text_color="gray"
         ).pack(side="right", padx=20)
@@ -313,7 +438,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
         # Compute absolute box centers
         centers = {}
-        for key, (fx, fy) in MODULE_POS.items():
+        for key, (fx, fy) in self._module_pos.items():
             centers[key] = (int(fx * cw), int(fy * ch))
 
         # Draw arrows FIRST (behind boxes)
@@ -328,7 +453,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
     def _draw_arrows(self, centers, bw, bh):
         """Draws orthogonal arrows between connected modules."""
-        for src, dst in ARROWS:
+        for src, dst in self._arrows:
             sx, sy = centers[src]
             dx, dy = centers[dst]
 
@@ -380,7 +505,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
     def _draw_box(self, key, cx, cy, bw, bh):
         """Draws a single module box — text spaced by actual font heights."""
-        mod   = MODULES[key]
+        mod   = self._modules[key]
         state = self._get_state(key)
         col   = STATE_COLORS[state]
 
@@ -509,7 +634,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
     # ------------------------------------------------------------------
 
     def _get_state(self, key):
-        mod = MODULES[key]
+        mod = self._modules[key]
         if mod["always"]:
             return "always"
         deps_met = all(r in self._selected for r in mod["requires"])
@@ -521,7 +646,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
     def _cascade_deselect(self, key):
         """Deselects all modules that depend on the given key."""
-        for mod_key, mod in MODULES.items():
+        for mod_key, mod in self._modules.items():
             if key in mod["requires"] and mod_key in self._selected:
                 self._selected.discard(mod_key)
                 self._cascade_deselect(mod_key)
@@ -539,7 +664,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
                 return
 
     def _toggle(self, key):
-        mod   = MODULES[key]
+        mod   = self._modules[key]
         state = self._get_state(key)
 
         if mod["always"] or state == "locked":
@@ -560,15 +685,15 @@ class CustomPipelinePanel(ctk.CTkToplevel):
     # ------------------------------------------------------------------
 
     def _select_all(self):
-        self._selected = set(MODULES.keys())
+        self._selected = set(self._modules.keys())
         self._draw_all()
 
     def _reset_to_core(self):
-        self._selected = {"Genslip", "Jbsim", "Hfsims", "Match"}
+        self._selected = {self._rupture_key, "Jbsim", "Hfsims", "Match"}
         self._draw_all()
 
     def _update_summary(self):
-        ordered = [m for m in EXECUTION_ORDER if m in self._selected]
+        ordered = [m for m in self._execution_order if m in self._selected]
         self.lbl_summary.configure(
             text=" → ".join(ordered) if ordered else ""
         )
@@ -578,7 +703,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
     # ------------------------------------------------------------------
 
     def _confirm(self):
-        ordered = [m for m in EXECUTION_ORDER if m in self._selected]
+        ordered = [m for m in self._execution_order if m in self._selected]
         if not ordered:
             return
 
