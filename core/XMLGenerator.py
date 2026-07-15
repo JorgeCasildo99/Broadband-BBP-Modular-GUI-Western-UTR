@@ -56,7 +56,7 @@ def _irikura_gen_srf_block(src_path, src_name, srf_name):
     """IrikuraGenSrf — rupture generator for Irikura Recipe Method 1.
     Replaces Genslip as the first module; everything downstream is identical."""
     return f"""\t\t<BBP_Module>
-\t\t\t<n>IrikuraGenSrf</n>
+\t\t\t<name>IrikuraGenSrf</name>
 \t\t\t<staged_files>
 \t\t\t\t<file>{GF_PATH}</file>
 \t\t\t\t<file>{src_path}</file>

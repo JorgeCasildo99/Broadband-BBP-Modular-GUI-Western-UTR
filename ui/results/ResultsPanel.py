@@ -384,16 +384,22 @@ class ResultsPanel(ctk.CTkToplevel):
             font=(res.FONT_TITLE[0], 18, "bold"), text_color="white"
         ).pack(side="left", padx=10, pady=12)
 
-        # Method badge — shown for every run (GP or EXSIM)
-        if self._sim_method in ("GP", "EXSIM"):
+        # Method badge — shown for every run
+        if self._sim_method in ("GP", "EXSIM", "IRIKURA1"):
             method_colors = {
-                "GP"   : ("#0a2a3a", "#3b8ed0"),
-                "EXSIM": ("#3a1a00", "#ffaa44"),
+                "GP"      : ("#0a2a3a", "#3b8ed0"),
+                "EXSIM"   : ("#3a1a00", "#ffaa44"),
+                "IRIKURA1": ("#0a2a0a", "#22aa55"),
+            }
+            method_labels = {
+                "GP"      : "GP",
+                "EXSIM"   : "EXSIM",
+                "IRIKURA1": "IRIKURA 1",
             }
             bg_color, fg_color = method_colors[self._sim_method]
             ctk.CTkLabel(
                 bar,
-                text=self._sim_method,
+                text=method_labels[self._sim_method],
                 font=(res.FONT_LABEL[0], 11, "bold"),
                 text_color=fg_color,
                 fg_color=bg_color,
@@ -518,12 +524,16 @@ class ResultsPanel(ctk.CTkToplevel):
         Delegates tab building to the appropriate method-specific view class.
         """
         try:
-            from ui.results.GPResults    import GPResults
-            from ui.results.ExSimResults import ExSimResults
+            from ui.results.GPResults      import GPResults
+            from ui.results.ExSimResults   import ExSimResults
+            from ui.results.IrikuraResults import IrikuraResults
 
             if self._is_exsim:
                 view = ExSimResults(self)
+            elif self._sim_method == "IRIKURA1":
+                view = IrikuraResults(self)
             else:
+                # GP and any future kinematic methods default to GPResults
                 view = GPResults(self)
 
             view.build_all()
