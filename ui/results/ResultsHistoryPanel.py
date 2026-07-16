@@ -980,7 +980,7 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
         run_id = session.get("run_id", "")
         method = session.get("sim_method", "UNKNOWN")
 
-        if method not in ("GP", "EXSIM"):
+        if method not in ("GP", "EXSIM", "IRIKURA1"):
             import tkinter.messagebox as mb
             mb.showwarning(
                 "Cannot Edit",

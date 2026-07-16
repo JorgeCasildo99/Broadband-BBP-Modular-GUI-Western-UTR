@@ -219,19 +219,11 @@ class ResultsPanel(ctk.CTkToplevel):
 
     def _detect_simulation_method(self):
         """
-        Returns "GP", "EXSIM", or "UNKNOWN".
+        Returns "GP", "EXSIM", "IRIKURA1", or "UNKNOWN".
 
         Primary source: the "# METHOD = ..." comment appended to the
-        .src file at generate-files time (same mechanism as the
-        Advanced GP Parameters block — a BBP-ignored comment that
-        travels with the run permanently via indata/<run_id>/).
-
-        Fallback: the 'Simulation Method' field in index-<run_id>.html,
-        used for runs made before this .src marker existed.
-
-        Note: validation runs no longer automatically return "GP" —
-        ExSIM validation runs are now possible and must be detected
-        correctly so the right tabs and content are shown.
+        .src file at generate-files time.
+        Fallback: the 'Simulation Method' field in index-<run_id>.html.
         """
         if self._src_file:
             ok, src_content = WSLBridge.read_wsl_file(self._src_file)
@@ -239,16 +231,15 @@ class ResultsPanel(ctk.CTkToplevel):
                 m = re.search(r'#\s*METHOD\s*=\s*(\w+)', src_content, re.IGNORECASE)
                 if m:
                     method = m.group(1).strip().upper()
-                    if method in ("GP", "EXSIM"):
+                    if method in ("GP", "EXSIM", "IRIKURA1"):
                         return method
 
         # Fallback: read from BBP's HTML report
         detected = WSLBridge.detect_simulation_method(self._run_id, self._outdata)
-        if detected in ("GP", "EXSIM"):
+        if detected in ("GP", "EXSIM", "IRIKURA1"):
             return detected
 
-        # Final fallback: if this is a validation run and method is still
-        # unknown, default to GP (BBP's built-in validation events use GP)
+        # Final fallback: validation runs default to GP
         if self._detect_validation():
             return "GP"
 

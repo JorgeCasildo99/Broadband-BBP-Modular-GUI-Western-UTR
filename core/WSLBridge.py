@@ -951,6 +951,8 @@ class WSLBridge:
             method = m.group(1).strip().upper()
             if "EXSIM" in method:
                 return "EXSIM"
+            if "IRIKURA" in method:
+                return "IRIKURA1"
             if "GP" in method:
                 return "GP"
             return method
