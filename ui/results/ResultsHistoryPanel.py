@@ -356,7 +356,7 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
         sim_method = ""
         if src_content:
             m = re.search(r'#\s*METHOD\s*=\s*(\w+)', src_content, re.IGNORECASE)
-            if m and m.group(1).strip().upper() in ("GP", "EXSIM", "IRIKURA1"):
+            if m and m.group(1).strip().upper() in ("GP", "EXSIM", "IRIKURA1", "SONG"):
                 sim_method = m.group(1).strip().upper()
         if not sim_method:
             sim_method = WSLBridge.detect_simulation_method(run_id, folder)
@@ -544,7 +544,7 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
             if ok_src and src_txt:
                 import re as _re
                 m2 = _re.search(r'#\s*METHOD\s*=\s*(\w+)', src_txt, _re.IGNORECASE)
-                if m2 and m2.group(1).strip().upper() in ("GP", "EXSIM", "IRIKURA1"):
+                if m2 and m2.group(1).strip().upper() in ("GP", "EXSIM", "IRIKURA1", "SONG"):
                     sim_method = m2.group(1).strip().upper()
             if sim_method == "UNKNOWN":
                 sim_method = WSLBridge.detect_simulation_method(run_id, outdata_path)
@@ -634,18 +634,20 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
         name_frame = ctk.CTkFrame(row, fg_color="transparent")
         name_frame.grid(row=0, column=2, padx=12, pady=10, sticky="w")
 
-        # Method badge (GP / EXSIM / IRIKURA1) — shown for every row
+        # Method badge (GP / EXSIM / IRIKURA1 / SONG) — shown for every row
         sim_method = session.get("sim_method", "UNKNOWN")
-        if sim_method in ("GP", "EXSIM", "IRIKURA1"):
+        if sim_method in ("GP", "EXSIM", "IRIKURA1", "SONG"):
             method_colors = {
                 "GP"      : ("#0a2a3a", "#3b8ed0"),
                 "EXSIM"   : ("#3a1a00", "#ffaa44"),
                 "IRIKURA1": ("#0a2a0a", "#22aa55"),
+                "SONG"    : ("#2a0a3a", "#8855cc"),
             }
             method_labels = {
                 "GP"      : "GP",
                 "EXSIM"   : "EXSIM",
                 "IRIKURA1": "IRIKURA 1",
+                "SONG"    : "SONG",
             }
             bg_color, fg_color = method_colors[sim_method]
             ctk.CTkLabel(
@@ -980,7 +982,7 @@ class ResultsHistoryPanel(ctk.CTkToplevel):
         run_id = session.get("run_id", "")
         method = session.get("sim_method", "UNKNOWN")
 
-        if method not in ("GP", "EXSIM", "IRIKURA1"):
+        if method not in ("GP", "EXSIM", "IRIKURA1", "SONG"):
             import tkinter.messagebox as mb
             mb.showwarning(
                 "Cannot Edit",

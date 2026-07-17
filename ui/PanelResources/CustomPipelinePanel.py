@@ -152,10 +152,17 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         self._box_coords   = {}
         self._resize_timer = None
 
-        # For Irikura, the rupture generator is IrikuraGenSrf not Genslip.
-        # We swap the module definitions at runtime so the panel shows
-        # and behaves correctly without duplicating any code.
-        self._rupture_key = "Genslip" if method == "GP" else "IrikuraGenSrf"
+        # Each method's rupture generator has a different BBP module name.
+        # Confirmed against real BBP-generated XML for each method (Song:
+        # run 4182486) rather than assumed — SongRMGSS is Song's rupture
+        # generator, exactly analogous to Genslip (GP) and IrikuraGenSrf
+        # (Irikura1). Unrecognized methods fall back to "Genslip" (GP).
+        RUPTURE_KEYS = {
+            "GP"      : "Genslip",
+            "IRIKURA1": "IrikuraGenSrf",
+            "SONG"    : "SongRMGSS",
+        }
+        self._rupture_key = RUPTURE_KEYS.get(method, "Genslip")
 
         # Build the active module definitions for this method
         self._modules        = self._build_modules()
@@ -166,11 +173,12 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         # Start with only the rupture generator selected (always required)
         self._selected = {self._rupture_key}
 
-        self.title(
-            "Custom Pipeline Selector — Graves & Pitarka"
-            if method == "GP" else
-            "Custom Pipeline Selector — Irikura Recipe 1"
-        )
+        TITLES = {
+            "GP"      : "Custom Pipeline Selector — Graves & Pitarka",
+            "IRIKURA1": "Custom Pipeline Selector — Irikura Recipe 1",
+            "SONG"    : "Custom Pipeline Selector — Song RMG",
+        }
+        self.title(TITLES.get(method, "Custom Pipeline Selector"))
         self.configure(fg_color="#0d0d0d")
         self.resizable(True, True)
         self.transient(master)
@@ -186,11 +194,12 @@ class CustomPipelinePanel(ctk.CTkToplevel):
     def _build_modules(self):
         """Returns module definitions with the correct rupture generator name."""
         rk = self._rupture_key
-        rk_desc = (
-            "Generates slip distribution\nacross fault plane.\nProduces .srf + rupture map."
-            if self._method == "GP" else
-            "Irikura recipe rupture model.\nGenerates slip distribution\nProduces .srf + rupture map."
-        )
+        RK_DESCRIPTIONS = {
+            "GP"      : "Generates slip distribution\nacross fault plane.\nProduces .srf + rupture map.",
+            "IRIKURA1": "Irikura recipe rupture model.\nGenerates slip distribution\nProduces .srf + rupture map.",
+            "SONG"    : "Song pseudo-dynamic rupture\nmodel. Generates slip distribution\nProduces .srf + rupture map.",
+        }
+        rk_desc = RK_DESCRIPTIONS.get(self._method, RK_DESCRIPTIONS["GP"])
         return {
             rk: {
                 "role"    : "Source Generator",
@@ -325,11 +334,14 @@ class CustomPipelinePanel(ctk.CTkToplevel):
             text_color="#666666"
         ).pack(side="left", padx=20)
 
+        HEADER_LABELS = {
+            "GP"      : "Graves & Pitarka  —  LA Basin",
+            "IRIKURA1": "Irikura Recipe 1  —  LA Basin",
+            "SONG"    : "Song RMG  —  LA Basin",
+        }
         ctk.CTkLabel(
             bar,
-            text="Graves & Pitarka  —  LA Basin"
-                 if self._method == "GP" else
-                 "Irikura Recipe 1  —  LA Basin",
+            text=HEADER_LABELS.get(self._method, "LA Basin"),
             font=(res.FONT_LABEL[0], 11),
             text_color="gray"
         ).pack(side="right", padx=20)

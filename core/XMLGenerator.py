@@ -30,6 +30,11 @@ EXSIM_PAR_FILE  = "labasin_exsim.par"
 EXSIM_PAR_PATH  = f"$BBP_INSTALL_GF/{VELOCITY_MODEL}/uwo/{EXSIM_PAR_FILE}"
 EXSIM_METHOD    = "EXSIM"
 
+# Song RMG uses the same GP codebase downstream (Jbsim/Hfsims/Match/...),
+# so it shares GF_PATH/GF_FILE/VELOCITY_MODEL with GP — no new constants needed
+# beyond the method label itself.
+SONG_METHOD     = "SONG"
+
 
 # ------------------------------------------------------------------
 # MODULE DEFINITIONS
@@ -57,6 +62,30 @@ def _irikura_gen_srf_block(src_path, src_name, srf_name):
     Replaces Genslip as the first module; everything downstream is identical."""
     return f"""\t\t<BBP_Module>
 \t\t\t<name>IrikuraGenSrf</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{GF_PATH}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{GF_FILE}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{srf_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+def _song_rmg_ss_block(src_path, src_name, srf_name):
+    """SongRMGSS — single-segment rupture generator for the Song method.
+    Confirmed against BBP source (bbp/comps/build_workflow.py): Song uses
+    codebase 'GP' downstream, and its __init__ signature
+    (r_velmodel, r_srcfile, o_r_srffile, i_vmodel_name) matches
+    Genslip/IrikuraGenSrf exactly, so this block is structurally
+    identical to _irikura_gen_srf_block — only the module name differs.
+    Multi-segment Song (module name 'SongRMGMS') is not yet supported
+    by this GUI."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>SongRMGSS</name>
 \t\t\t<staged_files>
 \t\t\t\t<file>{GF_PATH}</file>
 \t\t\t\t<file>{src_path}</file>
@@ -332,6 +361,85 @@ def _generate_irikura1_rupture_xml(base_name, src_path, stl_path, acc_output=Fal
     return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
 
 
+def _genhtml_block_song(src_path, stl_path, src_name, stl_name):
+    """Same as _genhtml_block but with method argument 'SONG' instead of
+    'GP'. Confirmed against a real BBP-generated Song XML (run 4182486):
+    the final GenHTML argument is the top-level method name ('SONG'),
+    not the internal codebase ('GP') that Jbsim/Hfsims run under —
+    these are two different things in BBP's build_workflow.py."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>GenHTML</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t\t<argument type="NoneType">None</argument>
+\t\t\t\t<argument type="str">{SONG_METHOD}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+def _generate_song_full_xml(base_name, src_path, stl_path, acc_output=False):
+    """
+    Song — Full Pipeline.
+    SongRMGSS → Jbsim → Hfsims → Match → Plot_Map → PlotSeis → RotD100 → FAS → GenHTML
+    Identical to GP/Irikura1 full pipeline but replaces the rupture
+    generator with SongRMGSS. Uses _genhtml_block_song (method='SONG'),
+    confirmed against a real BBP-generated Song XML — unlike Irikura1,
+    which reuses the plain GP-labeled _genhtml_block. That difference
+    is a confirmed fact from the reference file, not an assumption.
+    """
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+    acc_value = "True" if acc_output else "False"
+
+    modules = "\n".join([
+        _song_rmg_ss_block(src_path, src_name, srf_name),
+        _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _hfsims_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _match_block(stl_path, stl_name, acc_value),
+        _plot_map_block(src_path, stl_path, src_name, stl_name),
+        _plotseis_block(src_path, stl_path, src_name, stl_name),
+        _rotd100_block(stl_path, stl_name),
+        _fas_block(stl_path, stl_name),
+        _genhtml_block_song(src_path, stl_path, src_name, stl_name),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_song_quick_xml(base_name, src_path, stl_path, acc_output=False):
+    """Song — Quick Run (SongRMGSS + Jbsim + Hfsims + Match)."""
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+    acc_value = "True" if acc_output else "False"
+
+    modules = "\n".join([
+        _song_rmg_ss_block(src_path, src_name, srf_name),
+        _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _hfsims_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _match_block(stl_path, stl_name, acc_value),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_song_rupture_xml(base_name, src_path, stl_path, acc_output=False):
+    """Song — Rupture Only (SongRMGSS alone)."""
+    srf_name = f"{base_name}.srf"
+    src_name = f"{base_name}.src"
+
+    modules = _song_rmg_ss_block(src_path, src_name, srf_name)
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
 def _generate_quick_xml(base_name, src_path, stl_path, acc_output=False):
     """
     Quick Run — 4 core modules only.
@@ -404,7 +512,7 @@ def generate_xml(base_name, src_path, stl_path,
     Builds the BBP XML options file for the selected simulation profile.
 
     Args:
-        method (str): "GP", "EXSIM", or "IRIKURA1"
+        method (str): "GP", "EXSIM", "IRIKURA1", or "SONG"
         profile (str): "full", "quick", "rupture", or "custom"
     """
     if method == "EXSIM":
@@ -417,6 +525,14 @@ def generate_xml(base_name, src_path, stl_path,
             return _generate_irikura1_rupture_xml(base_name, src_path, stl_path, acc_output)
         else:
             return _generate_irikura1_full_xml(base_name, src_path, stl_path, acc_output)
+
+    if method == "SONG":
+        if profile == "quick":
+            return _generate_song_quick_xml(base_name, src_path, stl_path, acc_output)
+        elif profile == "rupture":
+            return _generate_song_rupture_xml(base_name, src_path, stl_path, acc_output)
+        else:
+            return _generate_song_full_xml(base_name, src_path, stl_path, acc_output)
 
     # GP (default)
     if profile == "quick":
@@ -499,6 +615,29 @@ BBP_MODULES_IRIKURA1_RUPTURE = [
     ("IrikuraGenSrf", "Generating rupture model (Irikura Recipe 1)..."),
 ]
 
+BBP_MODULES_SONG_FULL = [
+    ("SongRMGSS", "Generating rupture model (Song RMG)..."),
+    ("Jbsim",     "Computing low-frequency seismograms..."),
+    ("Hfsims",    "Computing high-frequency seismograms..."),
+    ("Match",     "Combining LF + HF broadband seismograms..."),
+    ("Plot_Map",  "Generating station map..."),
+    ("PlotSeis",  "Plotting seismograms..."),
+    ("RotD100",   "Computing RotD50/100 response spectra..."),
+    ("FAS",       "Computing Fourier Amplitude Spectra..."),
+    ("GenHTML",   "Generating HTML report..."),
+]
+
+BBP_MODULES_SONG_QUICK = [
+    ("SongRMGSS", "Generating rupture model (Song RMG)..."),
+    ("Jbsim",     "Computing low-frequency seismograms..."),
+    ("Hfsims",    "Computing high-frequency seismograms..."),
+    ("Match",     "Combining LF + HF broadband seismograms..."),
+]
+
+BBP_MODULES_SONG_RUPTURE = [
+    ("SongRMGSS", "Generating rupture model (Song RMG)..."),
+]
+
 BBP_MODULES_EXSIM = [
     ("ExSim",    "Running stochastic ExSIM broadband simulation..."),
     ("Plot_Map", "Generating fault trace and station map..."),
@@ -571,6 +710,18 @@ def get_modules_for_profile(profile, custom_modules=None, method="GP"):
                     for m in custom_modules if m in all_desc]
         else:
             return BBP_MODULES_IRIKURA1_FULL
+
+    if method == "SONG":
+        if profile == "quick":
+            return BBP_MODULES_SONG_QUICK
+        elif profile == "rupture":
+            return BBP_MODULES_SONG_RUPTURE
+        elif profile == "custom" and custom_modules:
+            all_desc = {m: d for m, d in BBP_MODULES_SONG_FULL}
+            return [(m, all_desc.get(m, f"Running {m}..."))
+                    for m in custom_modules if m in all_desc]
+        else:
+            return BBP_MODULES_SONG_FULL
 
     # GP (default)
     if profile == "quick":
