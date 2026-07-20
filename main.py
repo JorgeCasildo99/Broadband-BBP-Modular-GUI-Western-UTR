@@ -25,6 +25,7 @@ from ui.Dashboard import DashboardPanel
 from ui.GravesAndPitarka.GravesAndPitarkaPanel import GravesAndPitarkaPanel
 from ui.Irikura.IrikuraPanel                   import IrikuraPanel
 from ui.Song.SongPanel                         import SongPanel
+from ui.RuptureGenerator.RuptureGeneratorPanel import RuptureGeneratorPanel
 from ui.ExSIM.ExSimPanel             import ExSimPanel
 from ui.SimulationPanel import SimulationPanel
 from ui.results.ResultsPanel        import ResultsPanel
@@ -239,13 +240,14 @@ class MainPanel(ctk.CTk):
 
         self.dashboard = DashboardPanel(
             self.container,
-            open_gp_callback         = self.show_rupture_module,
-            open_exsim_callback      = self.show_exsim_module,
-            open_irikura1_callback   = self.show_irikura_module,
-            open_song_callback       = self.show_song_module,
-            open_results_callback    = self.open_results_history,
-            open_config_callback     = self.open_configuration_panel,
-            open_validation_callback = self.open_validation_panel
+            open_gp_callback                = self.show_rupture_module,
+            open_exsim_callback              = self.show_exsim_module,
+            open_irikura1_callback           = self.show_irikura_module,
+            open_song_callback               = self.show_song_module,
+            open_results_callback            = self.open_results_history,
+            open_config_callback             = self.open_configuration_panel,
+            open_validation_callback         = self.open_validation_panel,
+            open_rupture_generator_callback  = self.show_rupture_generator_module
         )
         self.dashboard.pack(fill="both", expand=True)
 
@@ -532,6 +534,58 @@ class MainPanel(ctk.CTk):
             on_run_callback=self.show_simulation_panel
         )
         self.song_module.pack(fill="both", expand=True)
+
+    def show_rupture_generator_module(self):
+        """
+        Switches from Dashboard to RuptureGeneratorPanel.
+        Unlike the method panels, this one owns its own run queue and
+        drives SimulationPanel directly (chaining through multiple
+        selected methods), so it needs a reference to the app root
+        (self) rather than just on_run_callback=self.show_simulation_panel.
+        """
+        for widget in self.container.winfo_children():
+            widget.destroy()
+
+        nav_bar = ctk.CTkFrame(
+            self.container, height=44, fg_color="#111111", corner_radius=6
+        )
+        nav_bar.pack(fill="x", pady=(0, 6))
+        nav_bar.pack_propagate(False)
+
+        ctk.CTkButton(
+            nav_bar,
+            text="← Back to Dashboard",
+            width=160, height=30,
+            fg_color="transparent",
+            border_width=1, border_color="#444444",
+            text_color="white", hover_color="#2a2a2a",
+            command=self.load_dashboard
+        ).pack(side="left", padx=10, pady=7)
+
+        title_frame = ctk.CTkFrame(nav_bar, fg_color="transparent")
+        title_frame.pack(side="left", expand=True, fill="both")
+
+        ctk.CTkLabel(
+            title_frame,
+            text="RUPTURE GENERATOR",
+            font=(res.FONT_LABEL[0], 13, "bold"),
+            text_color="white"
+        ).pack(side="left", padx=(0, 6), pady=7)
+
+        ctk.CTkLabel(
+            title_frame,
+            text="Compare GP, Irikura Recipe 1, and Song rupture models from the same fault geometry",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="gray"
+        ).pack(side="left", pady=7)
+
+        self.rupture_generator_module = RuptureGeneratorPanel(
+            self.container,
+            app_root=self,
+            on_dashboard_callback=self.load_dashboard,
+            on_results_callback=self.show_results_panel
+        )
+        self.rupture_generator_module.pack(fill="both", expand=True)
 
     def show_simulation_panel(self):
         """

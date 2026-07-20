@@ -104,12 +104,14 @@ class DashboardPanel(ctk.CTkFrame):
                  open_song_callback=None,
                  open_results_callback=None,
                  open_config_callback=None,
-                 open_validation_callback=None):
+                 open_validation_callback=None,
+                 open_rupture_generator_callback=None):
         super().__init__(master, fg_color="transparent")
 
-        self._open_results_callback    = open_results_callback
-        self._open_config_callback     = open_config_callback
-        self._open_validation_callback = open_validation_callback
+        self._open_results_callback           = open_results_callback
+        self._open_config_callback            = open_config_callback
+        self._open_validation_callback        = open_validation_callback
+        self._open_rupture_generator_callback = open_rupture_generator_callback
 
         # --- TOP BAR: title left, buttons right ---
         top_bar = ctk.CTkFrame(self, fg_color="transparent")
@@ -158,7 +160,19 @@ class DashboardPanel(ctk.CTkFrame):
             hover_color="#1a1600",
             font=(res.FONT_LABEL[0], 12),
             command=self._open_validation
-        ).pack(side="right", padx=(0, 0))
+        ).pack(side="right", padx=(8, 0))
+
+        ctk.CTkButton(
+            btn_right,
+            text="Rupture Generator",
+            width=170, height=36,
+            fg_color="transparent",
+            border_width=1, border_color="#aaaaaa",
+            text_color="white",
+            hover_color="#2a2a2a",
+            font=(res.FONT_LABEL[0], 12),
+            command=self._open_rupture_generator
+        ).pack(side="right", padx=(8, 0))
 
         # --- CARD GRID: 4 columns ---
         grid = ctk.CTkFrame(self, fg_color="transparent")
@@ -216,3 +230,7 @@ class DashboardPanel(ctk.CTkFrame):
     def _open_validation(self):
         if self._open_validation_callback:
             self._open_validation_callback()
+
+    def _open_rupture_generator(self):
+        if self._open_rupture_generator_callback:
+            self._open_rupture_generator_callback()
