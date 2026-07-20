@@ -703,7 +703,7 @@ if __name__ == "__main__":
 
     def _on_close():
         """
-        Clean shutdown handler — cancels any pending after() callbacks
+        Clean shutdown handler - cancels any pending after() callbacks
         before destroying the window so Tkinter doesn't fire them into
         a destroyed application and print bgerror messages.
         """
