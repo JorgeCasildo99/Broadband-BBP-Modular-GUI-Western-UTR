@@ -36,15 +36,19 @@ class RuptureGeneratorPanel(ctk.CTkFrame):
     Plot_Map/PlotSeis, so the station's exact location has no scientific
     effect — it exists only because BBP's XML header still references
     a station-list path). Simulate then runs the selected methods one
-    after another automatically: this panel opens SimulationPanel
-    directly (as GP/Irikura1/Song panels already do), and chains to the
-    next queued method via SimulationPanel's on_dashboard_callback
-    instead of returning to the real Dashboard until the queue is
-    empty. If the user opens Results mid-queue instead of continuing,
-    the chain stops there — they would need to reopen this panel and
-    re-run the remaining methods. That trade-off is a reasonable first
-    version, not a final design decision; worth revisiting with Dr.
-    Ghofrani once the panel is in use.
+    after another AUTOMATICALLY, with no click required between them:
+    this panel opens SimulationPanel directly (as GP/Irikura1/Song
+    panels already do) and passes it on_auto_continue=self._run_next_
+    in_queue, which SimulationPanel calls on its own a short moment
+    after a run finishes SUCCESSFULLY — never on failure, and never on
+    the last queued method. on_dashboard_callback stays wired to the
+    real Dashboard at every step (not to queue-chaining), so a failed
+    run or a manual "Back to Dashboard" click always means the real
+    Dashboard rather than silently continuing the queue. If the user
+    clicks "View Results" during the brief delay before a successful
+    run auto-continues, that cancels the pending auto-continue and the
+    queue does not advance — they would need to reopen this panel and
+    re-run the remaining methods.
     """
 
     METHOD_INFO = {
@@ -530,14 +534,19 @@ class RuptureGeneratorPanel(ctk.CTkFrame):
 
         is_last = not self._run_queue
 
+        # on_auto_continue is what makes this actually run 1 -> 2 -> 3
+        # automatically, with no click required: SimulationPanel calls
+        # it on its own a moment after a SUCCESSFUL finish (never on
+        # failure). on_dashboard_callback stays wired to the real
+        # Dashboard at every step — including mid-queue — so a manual
+        # "Back to Dashboard" click, or a failure, always means the
+        # real Dashboard rather than silently continuing the queue.
         SimulationPanel(
             master                = self._app_root,
             base_name             = entry["base_name"],
             src_path              = entry["src_path"],
             stl_path              = entry["stl_path"],
             on_results_callback   = self.on_results_callback,
-            on_dashboard_callback = (
-                self.on_dashboard_callback if is_last
-                else self._run_next_in_queue
-            ),
+            on_dashboard_callback = self.on_dashboard_callback,
+            on_auto_continue      = None if is_last else self._run_next_in_queue,
         )

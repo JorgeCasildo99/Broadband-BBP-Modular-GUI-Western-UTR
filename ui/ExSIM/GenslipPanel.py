@@ -1,7 +1,8 @@
 """
 GenslipPanel.py
 ===============
-Popup panel that generates a Genslip (GP Rupture Only) run using the
+Popup panel that generates a Rupture Only run (GP/Genslip, Irikura
+Recipe 1/IrikuraGenSrf, or Song/SongRMGSS — user's choice) using the
 fault geometry already set in ExSimPanel, extracts the slip distribution
 from the resulting .srf file, and auto-fills the ExSIM islipweight fields.
 
@@ -23,14 +24,23 @@ class GenslipPanel(ctk.CTkToplevel):
     A self-contained popup that:
 
       1. Displays the fault geometry read from ExSimPanel (read-only).
-      2. On "Run Genslip", writes a minimal .src + .stl to WSL and runs
-         BBP with the Rupture Only pipeline (Genslip only — no wave propagation).
+      2. On "Run <method>", writes a minimal .src + .stl to WSL and runs
+         BBP with the Rupture Only pipeline (rupture generator only —
+         no wave propagation).
       3. Tracks progress with a progress bar (3 stages):
-            Stage 1 — Running Genslip via BBP
+            Stage 1 — Running the rupture generator via BBP
             Stage 2 — Locating the .srf output file
             Stage 3 — Extracting and normalizing slip weights
       4. On completion, calls on_done(slip_weights_path, dl, dw) so
          ExSimPanel can auto-fill islipweight fields.
+
+    Supports all three rupture generators (GP/Genslip, Irikura Recipe 1/
+    IrikuraGenSrf, Song/SongRMGSS) via the method parameter — the class
+    name and file are unchanged from when this only supported Genslip,
+    since the .src schema, BBP rupture-only pipeline, and SRF format are
+    identical across all three (confirmed earlier against BBP source and
+    a real reference XML), so nothing but the method label and BBP
+    module name actually differs.
 
     Args:
         master          : parent Tk window
@@ -41,8 +51,23 @@ class GenslipPanel(ctk.CTkToplevel):
         dlen            : str — DLEN/dl value from ExSimPanel
         dwid            : str — DWID/dw value from ExSimPanel
         seed            : str — SEED value
+        method          : str — "GP", "IRIKURA1", or "SONG" (default "GP")
         on_done         : callable(slip_weights_path, dl, dw)
     """
+
+    METHOD_LABELS = {
+        "GP"      : "Graves & Pitarka",
+        "IRIKURA1": "Irikura Recipe 1",
+        "SONG"    : "Song RMG",
+    }
+    # BBP module name for each method's rupture generator — confirmed
+    # against XMLGenerator.py / real BBP source, same mapping used by
+    # CustomPipelinePanel's RUPTURE_KEYS.
+    RUPTURE_MODULE_NAMES = {
+        "GP"      : "Genslip",
+        "IRIKURA1": "IrikuraGenSrf",
+        "SONG"    : "SongRMGSS",
+    }
 
     # Progress stage fractions
     _STAGE_BBP   = 0.60   # BBP run takes most of the time
@@ -50,7 +75,7 @@ class GenslipPanel(ctk.CTkToplevel):
     _STAGE_PARSE = 1.00   # extracting slip
 
     def __init__(self, master, params, stations, experimenter,
-                 exp_name, dlen, dwid, seed, on_done):
+                 exp_name, dlen, dwid, seed, on_done, method="GP"):
         super().__init__(master)
 
         self._params       = params
@@ -62,13 +87,16 @@ class GenslipPanel(ctk.CTkToplevel):
         self._seed         = seed
         self._on_done      = on_done
         self._running      = False
+        self._method       = method if method in self.METHOD_LABELS else "GP"
+        self._module_name  = self.RUPTURE_MODULE_NAMES[self._method]
+        self._method_label = self.METHOD_LABELS[self._method]
 
         # Auto-generated run name so the session is easily identifiable
         clean_user = experimenter.replace(" ", "_")
         clean_exp  = exp_name.replace(" ", "_")
-        self._base_name = f"{clean_user}_{clean_exp}_just_Genslip"
+        self._base_name = f"{clean_user}_{clean_exp}_just_{self._method}"
 
-        self.title("Generate islipweight — Genslip Runner")
+        self.title(f"Generate islipweight — {self._method_label} Runner")
         self.geometry("680x640")
         self.configure(fg_color="#1a1a1a")
         self.resizable(False, False)
@@ -104,7 +132,7 @@ class GenslipPanel(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             hdr,
-            text="Generate islipweight file",
+            text=f"Generate islipweight file — {self._method_label}",
             font=(res.FONT_LABEL[0], 15, "bold"),
             text_color="white"
         ).pack(side="left", padx=16, pady=14)
@@ -125,14 +153,15 @@ class GenslipPanel(ctk.CTkToplevel):
         ctk.CTkLabel(
             info_frame,
             text=(
-                "This panel runs Genslip (GP Rupture Only) using the fault geometry "
-                "already set in the ExSIM panel. It does NOT compute ground motion — "
-                "it only generates a deterministic slip distribution on the fault plane.\n\n"
+                f"This panel runs {self._module_name} ({self._method_label} Rupture Only) "
+                "using the fault geometry already set in the ExSIM panel. It does NOT "
+                "compute ground motion — it only generates a deterministic slip "
+                "distribution on the fault plane.\n\n"
                 "The resulting slip pattern is extracted from the .srf file, normalized "
                 "to relative weights (0–1), and written as a plain text file. That file "
                 "is then automatically loaded into the ExSIM islipweight field so both "
-                "ExSIM and Genslip use the same source model — removing slip distribution "
-                "as a variable in the comparison with Sanaz's SW4 results."
+                f"ExSIM and {self._module_name} use the same source model — removing slip "
+                "distribution as a variable in the comparison with Sanaz's SW4 results."
             ),
             font=(res.FONT_LABEL[0], 10),
             text_color="#aaccaa",
@@ -211,7 +240,7 @@ class GenslipPanel(ctk.CTkToplevel):
 
         self.lbl_stage = ctk.CTkLabel(
             prog_frame,
-            text="Ready — click Run Genslip to start",
+            text=f"Ready — click Run {self._method_label} to start",
             font=(res.FONT_LABEL[0], 10),
             text_color="#888888"
         )
@@ -230,8 +259,8 @@ class GenslipPanel(ctk.CTkToplevel):
 
         self.btn_run = ctk.CTkButton(
             btn_row,
-            text="▶  Run Genslip",
-            width=160, height=36,
+            text=f"▶  Run {self._method_label}",
+            width=180, height=36,
             fg_color="#1a4a1a", hover_color="#2a6a2a",
             text_color="#88dd88",
             font=(res.FONT_LABEL[0], 12, "bold"),
@@ -256,7 +285,7 @@ class GenslipPanel(ctk.CTkToplevel):
         self.lbl_stage.configure(text=msg, text_color=color)
 
     def _run(self):
-        """Validates then kicks off the Genslip run in a background thread."""
+        """Validates then kicks off the rupture-generator run in a background thread."""
         if self._running:
             return
 
@@ -272,7 +301,7 @@ class GenslipPanel(ctk.CTkToplevel):
         thread.start()
 
     def _run_thread(self):
-        """Background thread — runs Genslip, finds .srf, extracts slip."""
+        """Background thread — runs the selected rupture generator, finds .srf, extracts slip."""
         import time
 
         # ── STAGE 1: Write .src and .stl, generate XML, run BBP ──────
@@ -290,7 +319,7 @@ class GenslipPanel(ctk.CTkToplevel):
         src_lines.append(f"DLEN = {self._dlen}\n")
         src_lines.append(f"DWID = {self._dwid}\n")
         src_lines.append(f"SEED = {self._seed}\n")
-        src_lines.append("# METHOD = GP\n")
+        src_lines.append(f"# METHOD = {self._method}\n")
         src_content = "".join(src_lines)
 
         # Build .stl content — use ExSIM stations (real coords)
@@ -325,7 +354,7 @@ class GenslipPanel(ctk.CTkToplevel):
         AppConfig.current_stl_file  = stl_wsl
         AppConfig.current_base_name = self._base_name
         AppConfig.simulation_profile = "rupture"
-        AppConfig.simulation_method  = "GP"
+        AppConfig.simulation_method  = self._method
 
         # Generate XML
         self._set_progress(0.10, "Stage 1/3 — Generating XML…")
@@ -335,14 +364,14 @@ class GenslipPanel(ctk.CTkToplevel):
             stl_wsl,
             profile="rupture",
             custom_modules=None,
-            method="GP"
+            method=self._method
         )
         if not ok:
             self._finish_error(f"XML generation failed: {xml_result}")
             return
 
         xml_path = xml_result
-        self._set_progress(0.15, "Stage 1/3 — Running Genslip via BBP…")
+        self._set_progress(0.15, f"Stage 1/3 — Running {self._module_name} via BBP…")
 
         # Run BBP (blocking in this thread)
         run_success = [False]
@@ -372,7 +401,7 @@ class GenslipPanel(ctk.CTkToplevel):
         progress = 0.15
         while not done_event.is_set():
             progress = min(progress + 0.005, self._STAGE_BBP - 0.02)
-            self._set_progress(progress, "Stage 1/3 — Running Genslip via BBP…")
+            self._set_progress(progress, f"Stage 1/3 — Running {self._module_name} via BBP…")
             time.sleep(0.3)
 
         if not run_success[0]:
@@ -380,7 +409,7 @@ class GenslipPanel(ctk.CTkToplevel):
             return
 
         run_id = run_id_out[0]
-        self._set_progress(self._STAGE_BBP, "Stage 1/3 — Genslip complete ✓")
+        self._set_progress(self._STAGE_BBP, f"Stage 1/3 — {self._module_name} complete ✓")
         time.sleep(0.3)
 
         # ── STAGE 2: Locate the .srf file ────────────────────────────
@@ -484,9 +513,9 @@ class GenslipPanel(ctk.CTkToplevel):
     def _apply_error(self, msg):
         import tkinter.messagebox as mb
         self._running = False
-        self.btn_run.configure(state="normal", text="▶  Run Genslip")
+        self.btn_run.configure(state="normal", text=f"▶  Run {self._method_label}")
         self._set_progress(0, f"Error — {msg[:60]}…", res.COLOR_ERROR)
-        mb.showerror("Genslip Error", msg, parent=self)
+        mb.showerror(f"{self._method_label} Error", msg, parent=self)
 
     # ------------------------------------------------------------------
     # SRF PARSER (same logic as ExSimPanel._parse_srf_slip)
@@ -494,21 +523,43 @@ class GenslipPanel(ctk.CTkToplevel):
 
     def _parse_srf_slip(self, srf_content):
         """
-        Parses PEAK1 values from Line B of each SRF POINT block.
+        Parses per-point slip values from an SRF POINTS block.
+
+        Two SRF point layouts are supported, auto-detected from the
+        token count of the first data line after POINTS — not assumed,
+        both confirmed against real GUI-generated .srf files:
+
+        - Legacy 2-line layout (Genslip / IrikuraGenSrf output, still
+          the layout most of this method was originally written for):
+          a 10-token header line, then a 7-token line whose index [1]
+          is the real, spatially-varying slip value ("PEAK1"). Index
+          [8] of the header line, which looks like it should be
+          "slip1", is constant across every point in this writer's
+          output and must not be used — this was already known before
+          Song existed.
+        - Standard 3-line layout (SongRMGSS output — matches the
+          official SRF 2.0 point spec more closely than the legacy
+          layout does): an 8-token geometry line (lon lat dep stk dip
+          area tinit dt), a 7-token line (rake slip1 nt1 slip2 nt2
+          slip3 nt3), then the slip-rate time series wrapped across as
+          many lines as nt1 (+nt2+nt3) need — confirmed against a real
+          Song .srf containing a point with nt1=11, which wraps 6+5
+          across two lines. Here slip1 (second line, index 1) DOES
+          vary meaningfully point to point (confirmed against the real
+          file), so it's used directly — no need for the legacy
+          layout's PEAK1 workaround, and no need to parse the
+          time-series values themselves, only to correctly skip past
+          them so point boundaries stay aligned.
+
         Returns (nstk, ndip, slip_values).
         """
         lines = srf_content.splitlines()
         nstk = ndip = None
-        slip_values = []
-        in_points = False
-        prev_was_A = False
+        points_idx = None
 
-        for raw in lines:
+        for i, raw in enumerate(lines):
             parts = raw.strip().split()
-            if not parts:
-                continue
-
-            if not in_points and len(parts) == 6:
+            if points_idx is None and len(parts) == 6:
                 try:
                     nt = int(parts[2])
                     nd = int(parts[3])
@@ -516,24 +567,78 @@ class GenslipPanel(ctk.CTkToplevel):
                         nstk, ndip = nt, nd
                 except (ValueError, IndexError):
                     pass
-
             if raw.strip().startswith("POINTS"):
-                in_points = True
-                continue
-
-            if not in_points:
-                continue
-
-            if len(parts) == 10:
-                prev_was_A = True
-            elif len(parts) == 7 and prev_was_A:
-                slip_values.append(float(parts[1]))
-                prev_was_A = False
-            else:
-                prev_was_A = False
+                points_idx = i
+                break
 
         if nstk is None or ndip is None:
             raise ValueError("Could not read PLANE header (nstk, ndip).")
+        if points_idx is None:
+            raise ValueError("Could not find POINTS marker.")
+
+        i = points_idx + 1
+        while i < len(lines) and not lines[i].strip():
+            i += 1
+        if i >= len(lines):
+            raise ValueError("No point data found after POINTS marker.")
+
+        first_token_count = len(lines[i].strip().split())
+        slip_values = []
+
+        if first_token_count == 10:
+            # Legacy 2-line layout (Genslip / IrikuraGenSrf)
+            prev_was_A = False
+            while i < len(lines):
+                parts = lines[i].strip().split()
+                if not parts:
+                    i += 1
+                    continue
+                if len(parts) == 10:
+                    prev_was_A = True
+                elif len(parts) == 7 and prev_was_A:
+                    slip_values.append(float(parts[1]))
+                    prev_was_A = False
+                else:
+                    prev_was_A = False
+                i += 1
+
+        elif first_token_count == 8:
+            # Standard 3-line layout (SongRMGSS)
+            for _ in range(nstk * ndip):
+                while i < len(lines) and not lines[i].strip():
+                    i += 1
+                i += 1  # geometry line (8 tokens) — not needed here
+
+                while i < len(lines) and not lines[i].strip():
+                    i += 1
+                parts = lines[i].strip().split()
+                if len(parts) != 7:
+                    raise ValueError(
+                        f"Expected a 7-token rake/slip/nt line at SRF "
+                        f"line {i + 1}, got {len(parts)} tokens."
+                    )
+                slip1 = float(parts[1])
+                nt1, nt2, nt3 = int(float(parts[2])), int(float(parts[4])), int(float(parts[6]))
+                slip_values.append(slip1)
+                i += 1
+
+                # Skip the wrapped slip-rate time series for each
+                # nonzero component — values themselves aren't needed
+                # (slip1 already captured above), but the line pointer
+                # must land exactly on the next point's geometry line.
+                for nt in (nt1, nt2, nt3):
+                    remaining = nt
+                    while remaining > 0:
+                        while i < len(lines) and not lines[i].strip():
+                            i += 1
+                        remaining -= len(lines[i].strip().split())
+                        i += 1
+        else:
+            raise ValueError(
+                f"Unrecognized SRF point layout — first data line after "
+                f"POINTS has {first_token_count} tokens (expected 8 or 10)."
+            )
+
         if len(slip_values) != nstk * ndip:
             raise ValueError(
                 f"Expected {nstk * ndip} slip values ({nstk}×{ndip}), "

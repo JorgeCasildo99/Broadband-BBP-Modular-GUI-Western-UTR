@@ -28,7 +28,8 @@ class SimulationPanel(ctk.CTkToplevel):
     and a results location message on completion.
     """
 
-    def __init__(self, master, base_name, src_path, stl_path, on_results_callback=None, on_dashboard_callback=None):
+    def __init__(self, master, base_name, src_path, stl_path, on_results_callback=None,
+                 on_dashboard_callback=None, on_auto_continue=None):
         super().__init__(master)
 
         self.base_name              = base_name
@@ -36,6 +37,16 @@ class SimulationPanel(ctk.CTkToplevel):
         self.stl_path               = stl_path
         self._on_results_callback   = on_results_callback
         self._on_dashboard_callback = on_dashboard_callback
+        # If set, called automatically on SUCCESS (never on failure —
+        # a failed run shouldn't silently move on to the next queued
+        # method) a short delay after completion, with no click
+        # required. RuptureGeneratorPanel uses this to chain GP ->
+        # IRIKURA1 -> SONG automatically. Distinct from
+        # on_dashboard_callback, which stays wired to the real
+        # Dashboard so a manual "Back to Dashboard" click during a
+        # queued run still means what it says.
+        self._on_auto_continue      = on_auto_continue
+        self._auto_continue_timer   = None
 
         # Get the module list for the selected profile
         self._profile         = AppConfig.simulation_profile
@@ -55,6 +66,18 @@ class SimulationPanel(ctk.CTkToplevel):
         self.configure(fg_color="#1a1a1a")
         self.resizable(True, True)
         self.transient(master)
+
+        # Without this, the window's native close (X) button just
+        # destroys the Toplevel directly — bypassing _go_to_dashboard()
+        # entirely. That's the only place on_dashboard_callback fires,
+        # which is also what RuptureGeneratorPanel relies on to chain
+        # to the next queued method. _on_window_close() only forwards
+        # to _go_to_dashboard() once the run has actually finished
+        # (success or failure) — while a simulation is still in
+        # progress, closing the window is ignored, the same way
+        # btn_dashboard stays disabled during a run, so a background
+        # BBP process is never abandoned mid-write.
+        self.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
         self._build_ui()
 
@@ -468,11 +491,39 @@ class SimulationPanel(ctk.CTkToplevel):
                 hover_color="#444444",
                 text_color="white"
             )
-            self._restore_par_defaults()
+            self._safe_restore_par_defaults()
+
+            # Automatic chaining for RuptureGeneratorPanel's queue —
+            # fires only on success, never on failure, and only if the
+            # caller actually passed on_auto_continue (i.e. this isn't
+            # the last queued method). No click required: the next
+            # method starts on its own a moment after this one finishes.
+            if self._on_auto_continue:
+                self.lbl_status.configure(
+                    text="Simulation complete — starting next queued method...",
+                    text_color=res.COLOR_SUCCESS
+                )
+                self._auto_continue_timer = self.after(1200, self._fire_auto_continue)
 
         else:
             failed = self._failed_module or "Unknown module"
             self._on_error(failed, error_msg)
+
+    def _fire_auto_continue(self):
+        """
+        Actually advances the queue. Guarded against firing twice and
+        against firing on an already-destroyed window (e.g. if the
+        user manually clicked View Results or Back to Dashboard during
+        the short delay before this timer went off).
+        """
+        self._auto_continue_timer = None
+        if not self.winfo_exists():
+            return
+        cb = self._on_auto_continue
+        self._on_auto_continue = None
+        if cb:
+            cb()
+        self.destroy()
 
     def _on_error(self, module_name, error_msg):
         """Handles a simulation error — shows message and enables retry."""
@@ -504,18 +555,60 @@ class SimulationPanel(ctk.CTkToplevel):
             hover_color="#444444",
             text_color="white"
         )
-        self._restore_par_defaults()
+        self._safe_restore_par_defaults()
 
     # ------------------------------------------------------------------
     # GO TO DASHBOARD
     # ------------------------------------------------------------------
 
+    def _cancel_auto_continue(self):
+        """
+        Cancels a pending auto-continue timer and clears the callback,
+        so a manual click (View Results / Back to Dashboard) during
+        the short post-success delay takes precedence and the queue
+        doesn't also advance on its own a moment later.
+        """
+        if self._auto_continue_timer is not None:
+            try:
+                self.after_cancel(self._auto_continue_timer)
+            except Exception:
+                pass
+            self._auto_continue_timer = None
+        self._on_auto_continue = None
+
     def _go_to_dashboard(self):
         """Restores par defaults then navigates back to the Dashboard."""
-        self._restore_par_defaults()
+        self._cancel_auto_continue()
+        self._safe_restore_par_defaults()
         if self._on_dashboard_callback:
             self._on_dashboard_callback()
         self.after(200, self.destroy)
+
+    def _on_window_close(self):
+        """
+        Handles the window's native close (X) button. Only forwards to
+        _go_to_dashboard() once the run has actually finished — while
+        a simulation is in progress this is a no-op, matching
+        btn_dashboard's disabled state during a run.
+        """
+        if self._simulation_done or self._failed_module is not None:
+            self._go_to_dashboard()
+        # else: ignore — simulation still running, don't abandon it
+        # or fire a queue-continuation callback mid-run.
+
+    def _safe_restore_par_defaults(self):
+        """
+        Wraps _restore_par_defaults() so a failure there can never
+        silently swallow on_dashboard_callback — without this, an
+        exception here would abort _go_to_dashboard() before the
+        callback runs, which is exactly what RuptureGeneratorPanel
+        relies on to chain to the next queued method. Any failure is
+        logged to the console box instead of vanishing.
+        """
+        try:
+            self._restore_par_defaults()
+        except Exception as e:
+            self._log(f"[WARNING] _restore_par_defaults() failed: {e}")
 
     def _restore_par_defaults(self):
         """
@@ -606,6 +699,7 @@ class SimulationPanel(ctk.CTkToplevel):
 
     def _show_results_location(self):
         """Opens ResultsPanel via MainPanel callback, then destroys self."""
+        self._cancel_auto_continue()
         if self._on_results_callback:
             self._on_results_callback()
         self.after(500, self.destroy)

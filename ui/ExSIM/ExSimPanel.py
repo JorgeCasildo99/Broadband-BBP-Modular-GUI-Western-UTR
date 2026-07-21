@@ -795,6 +795,55 @@ class ExSimPanel(ctk.CTkFrame):
             command=self._open_genslip_panel
         ).pack(side="left", padx=(12, 0))
 
+        # --- RUPTURE GENERATOR CHOICE (single-select) for the islipweight
+        # run above — GP/Genslip, Irikura Recipe 1/IrikuraGenSrf, or
+        # Song/SongRMGSS. Unlike RuptureGeneratorPanel's multi-select
+        # (which runs several generators independently), only one can
+        # ever be selected here, since this single choice feeds directly
+        # into ExSIM's own islipweight file. Defaults to GP, matching
+        # this panel's behavior before this option existed.
+        rupture_choice_row = ctk.CTkFrame(self.adv_exsim_content, fg_color="transparent")
+        rupture_choice_row.pack(fill="x", padx=12, pady=(4, 2))
+
+        ctk.CTkLabel(
+            rupture_choice_row, text="Rupture generator for islipweight:",
+            font=(res.FONT_LABEL[0], 10), text_color="#aaaaaa", anchor="w"
+        ).pack(side="left", padx=(0, 8))
+
+        self._islipweight_method = "GP"
+        self._islipweight_method_buttons = {}
+
+        RUPTURE_CHOICE_INFO = {
+            "GP"      : ("GP",       "#3b8ed0"),
+            "IRIKURA1": ("Irikura",  "#22aa55"),
+            "SONG"    : ("Song",     "#8855cc"),
+        }
+
+        def _select_islipweight_method(method):
+            self._islipweight_method = method
+            for m, btn in self._islipweight_method_buttons.items():
+                label, color = RUPTURE_CHOICE_INFO[m]
+                if m == method:
+                    btn.configure(fg_color=color, text_color="white")
+                else:
+                    btn.configure(fg_color="#222222", text_color=color)
+
+        for method, (label, color) in RUPTURE_CHOICE_INFO.items():
+            btn = ctk.CTkButton(
+                rupture_choice_row,
+                text=label,
+                width=70, height=26,
+                border_width=2,
+                border_color=color,
+                fg_color=color if method == "GP" else "#222222",
+                text_color="white" if method == "GP" else color,
+                hover_color="#2a2a2a",
+                font=(res.FONT_LABEL[0], 10),
+                command=lambda m=method: _select_islipweight_method(m)
+            )
+            btn.pack(side="left", padx=3)
+            self._islipweight_method_buttons[method] = btn
+
         # File picker row — child of a wrapper placed directly below the dropdown.
         # Using a wrapper means pack()/pack_forget() positions it right here,
         # not at the bottom of adv_exsim_content.
@@ -2214,8 +2263,9 @@ class ExSimPanel(ctk.CTkFrame):
     def _open_genslip_panel(self):
         """
         Validates that all fault geometry fields are filled and at least
-        one station exists, then opens GenslipPanel to run Genslip and
-        auto-generate the islipweight file.
+        one station exists, then opens GenslipPanel to run the selected
+        rupture generator (self._islipweight_method — GP, IRIKURA1, or
+        SONG) and auto-generate the islipweight file.
         """
         from ui.ExSIM.GenslipPanel import GenslipPanel
 
@@ -2306,6 +2356,7 @@ class ExSimPanel(ctk.CTkFrame):
             dlen         = dl,
             dwid         = dw,
             seed         = seed,
+            method       = self._islipweight_method,
             on_done      = on_done
         )
 
@@ -2408,25 +2459,39 @@ class ExSimPanel(ctk.CTkFrame):
 
     def _parse_srf_slip(self, srf_content):
         """
-        Parses a BBP Genslip SRF file and returns (nstk, ndip, slip_values).
+        Parses per-point slip values from an SRF POINTS block.
 
-        Line detection by value count:
-          10 values = Line A (point header) — slip1 at index [8] is CONSTANT, skip
-          7  values = Line B (nt/peak line)  — PEAK1 at index [1] is real slip rate
-          other     = Line C (time series)   — ignore
+        Two SRF point layouts are supported, auto-detected from the
+        token count of the first data line after POINTS — not assumed,
+        both confirmed against real GUI-generated .srf files:
+
+        - Legacy 2-line layout (Genslip / IrikuraGenSrf output, what
+          this method originally supported): a 10-token header line,
+          then a 7-token line whose index [1] is the real,
+          spatially-varying slip value ("PEAK1"). Index [8] of the
+          header line, which looks like it should be "slip1", is
+          constant across every point in this writer's output and
+          must not be used.
+        - Standard 3-line layout (SongRMGSS output — matches the
+          official SRF 2.0 point spec more closely than the legacy
+          layout does): an 8-token geometry line (lon lat dep stk dip
+          area tinit dt), a 7-token line (rake slip1 nt1 slip2 nt2
+          slip3 nt3), then the slip-rate time series wrapped across as
+          many lines as nt1 (+nt2+nt3) need — confirmed against a real
+          Song .srf containing a point with nt1=11, which wraps 6+5
+          across two lines. Here slip1 (second line, index 1) DOES
+          vary meaningfully point to point (confirmed against the real
+          file), so it's used directly — no rate-function math needed,
+          just correctly skipping past the wrapped values so point
+          boundaries stay aligned.
         """
         lines = srf_content.splitlines()
         nstk = ndip = None
-        slip_values = []
-        in_points = False
-        prev_was_A = False
+        points_idx = None
 
-        for raw in lines:
+        for i, raw in enumerate(lines):
             parts = raw.strip().split()
-            if not parts:
-                continue
-
-            if not in_points and len(parts) == 6:
+            if points_idx is None and len(parts) == 6:
                 try:
                     nstk_try = int(parts[2])
                     ndip_try = int(parts[3])
@@ -2434,26 +2499,76 @@ class ExSimPanel(ctk.CTkFrame):
                         nstk, ndip = nstk_try, ndip_try
                 except (ValueError, IndexError):
                     pass
-
             if raw.strip().startswith("POINTS"):
-                in_points = True
-                continue
-
-            if not in_points:
-                continue
-
-            if len(parts) == 10:
-                prev_was_A = True
-            elif len(parts) == 7 and prev_was_A:
-                slip_values.append(float(parts[1]))
-                prev_was_A = False
-            else:
-                prev_was_A = False
+                points_idx = i
+                break
 
         if nstk is None or ndip is None:
             raise ValueError(
                 "Could not read PLANE header (nstk, ndip) from SRF file."
             )
+        if points_idx is None:
+            raise ValueError("Could not find POINTS marker in SRF file.")
+
+        i = points_idx + 1
+        while i < len(lines) and not lines[i].strip():
+            i += 1
+        if i >= len(lines):
+            raise ValueError("No point data found after POINTS marker.")
+
+        first_token_count = len(lines[i].strip().split())
+        slip_values = []
+
+        if first_token_count == 10:
+            # Legacy 2-line layout (Genslip / IrikuraGenSrf)
+            prev_was_A = False
+            while i < len(lines):
+                parts = lines[i].strip().split()
+                if not parts:
+                    i += 1
+                    continue
+                if len(parts) == 10:
+                    prev_was_A = True
+                elif len(parts) == 7 and prev_was_A:
+                    slip_values.append(float(parts[1]))
+                    prev_was_A = False
+                else:
+                    prev_was_A = False
+                i += 1
+
+        elif first_token_count == 8:
+            # Standard 3-line layout (SongRMGSS)
+            for _ in range(nstk * ndip):
+                while i < len(lines) and not lines[i].strip():
+                    i += 1
+                i += 1  # geometry line (8 tokens) — not needed here
+
+                while i < len(lines) and not lines[i].strip():
+                    i += 1
+                parts = lines[i].strip().split()
+                if len(parts) != 7:
+                    raise ValueError(
+                        f"Expected a 7-token rake/slip/nt line at SRF "
+                        f"line {i + 1}, got {len(parts)} tokens."
+                    )
+                slip1 = float(parts[1])
+                nt1, nt2, nt3 = int(float(parts[2])), int(float(parts[4])), int(float(parts[6]))
+                slip_values.append(slip1)
+                i += 1
+
+                for nt in (nt1, nt2, nt3):
+                    remaining = nt
+                    while remaining > 0:
+                        while i < len(lines) and not lines[i].strip():
+                            i += 1
+                        remaining -= len(lines[i].strip().split())
+                        i += 1
+        else:
+            raise ValueError(
+                f"Unrecognized SRF point layout — first data line after "
+                f"POINTS has {first_token_count} tokens (expected 8 or 10)."
+            )
+
         if len(slip_values) != nstk * ndip:
             raise ValueError(
                 f"Expected {nstk * ndip} slip values ({nstk}×{ndip}) "
