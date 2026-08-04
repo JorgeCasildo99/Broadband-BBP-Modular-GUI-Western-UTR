@@ -388,6 +388,46 @@ class ComparisonPanel(ctk.CTkToplevel):
         )
         self._fas_seg.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=4)
 
+        # ── TIME WINDOW (TRIM) ──────────────────────────────────────
+        # Only meaningful for the Seismogram (time-domain) plot mode —
+        # RotD50/100 and FAS are period/frequency-domain and come from
+        # BBP's own pre-computed summary files, not a time series this
+        # panel controls. Leaving both boxes empty means no trim on
+        # that side (full record shown), matching how a researcher
+        # would expect "no input = no change" to behave.
+        _sep("Time Window (Trim)")
+
+        trim_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        trim_frame.pack(fill="x", padx=14, pady=(2, 2))
+        trim_frame.grid_columnconfigure((1, 3), weight=1)
+
+        ctk.CTkLabel(
+            trim_frame, text="Start (s):",
+            font=(res.FONT_LABEL[0], 10), text_color="gray"
+        ).grid(row=0, column=0, padx=(0, 4), sticky="w")
+        self._trim_start = ctk.CTkEntry(
+            trim_frame, height=26, placeholder_text="0"
+        )
+        self._trim_start.grid(row=0, column=1, padx=(0, 10), sticky="ew")
+        self._trim_start.bind("<KeyRelease>", lambda e: self._schedule_redraw())
+
+        ctk.CTkLabel(
+            trim_frame, text="End (s):",
+            font=(res.FONT_LABEL[0], 10), text_color="gray"
+        ).grid(row=0, column=2, padx=(0, 4), sticky="w")
+        self._trim_end = ctk.CTkEntry(
+            trim_frame, height=26, placeholder_text="end"
+        )
+        self._trim_end.grid(row=0, column=3, sticky="ew")
+        self._trim_end.bind("<KeyRelease>", lambda e: self._schedule_redraw())
+
+        ctk.CTkLabel(
+            parent,
+            text="Applies to the Seismogram plot only. Leave a box empty to keep that end of the record untrimmed.",
+            font=(res.FONT_LABEL[0], 9), text_color="#666666",
+            wraplength=330, justify="left"
+        ).pack(anchor="w", padx=14, pady=(0, 4))
+
         # ── SEPARATOR ───────────────────────────────────────────────
         ctk.CTkFrame(parent, fg_color="#333333", height=1).pack(
             fill="x", padx=14, pady=12)
@@ -1190,6 +1230,49 @@ class ComparisonPanel(ctk.CTkToplevel):
     # DRAW (uses cached data)
     # ------------------------------------------------------------------
 
+    def _apply_trim(self, data):
+        """
+        Slices a (t, ns, ew, ud) data tuple down to [trim_start, trim_end]
+        seconds, based on the Time Window entry boxes. Blank/invalid
+        entries mean "no trim on that side" — trim_start defaults to
+        the record's own first sample, trim_end to its last. Returns
+        None if the requested window leaves zero samples, so the
+        caller can show a clear error instead of plotting nothing.
+        """
+        if data is None:
+            return None
+
+        t, ns, ew, ud = data
+        if not t:
+            return data
+
+        start_raw = self._trim_start.get().strip()
+        end_raw   = self._trim_end.get().strip()
+
+        try:
+            start = float(start_raw) if start_raw else t[0]
+        except ValueError:
+            start = t[0]
+
+        try:
+            end = float(end_raw) if end_raw else t[-1]
+        except ValueError:
+            end = t[-1]
+
+        if start > end:
+            start, end = end, start
+
+        idx = [i for i, ti in enumerate(t) if start <= ti <= end]
+        if not idx:
+            return None
+
+        return (
+            [t[i]  for i in idx],
+            [ns[i] for i in idx],
+            [ew[i] for i in idx],
+            [ud[i] for i in idx],
+        )
+
     def _draw(self):
         """Redraws the plot using cached data and current opacity values."""
 
@@ -1204,6 +1287,23 @@ class ComparisonPanel(ctk.CTkToplevel):
         data_a   = self._cache_a
         data_b   = self._cache_b if self._use_b.get() else None
         data_obs = None
+
+        # --- TIME WINDOW TRIM (Seismogram mode only) ---
+        # Applied here, once, before anything downstream reads data_a/
+        # data_b — peak-finding, plotting, and the summary card all
+        # operate on whatever these two names point to, so trimming at
+        # this single point is sufficient for the whole method.
+        data_a = self._apply_trim(data_a)
+        if data_b is not None:
+            data_b = self._apply_trim(data_b)
+
+        if data_a is None:
+            self._set_status(
+                "Trim window leaves no data for Signal A.\n"
+                "Check the Start/End values in Time Window.",
+                error=True
+            )
+            return
 
         unit = ("cm/s²" if self._data_type.get() == "Acceleration" else "cm/s")
 

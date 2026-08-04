@@ -2626,9 +2626,15 @@ class ExSimPanel(ctk.CTkFrame):
             stripped = line.strip()
 
             # Q factor line: three numbers matching Qmin Q0 eta pattern
-            # Identified by the comment line immediately before it
+            # Identified by the comment line immediately before it.
+            # Case-insensitive to match every other check in this
+            # function — this one was the odd one out (previously
+            # required an exact-case "Quality factor" match), which
+            # meant it could silently never fire if the real file's
+            # comment capitalization didn't match exactly, with zero
+            # error raised either way.
             if re.match(r'^\s*\d+\.?\d*\s+\d+\.?\d*\s+\d*\.?\d+\s*$', stripped) \
-                    and i > 0 and "Quality factor" in lines[i-1]:
+                    and i > 0 and "quality factor" in lines[i-1].lower():
                 new_lines.append(f"  {int(qmin)}  {q0}  {eta}")
                 i += 1
                 continue
@@ -2984,17 +2990,28 @@ class ExSimPanel(ctk.CTkFrame):
                 return
 
         ok_par, err_par = self._write_adv_exsim_to_par()
-        if not ok_par:
-            self.help_label.configure(
-                text=f"Warning: could not update labasin_exsim.par — {err_par}",
-                text_color="#ffaa44"
-            )
 
         self.btn_run.configure(state="normal")
-        self.help_label.configure(
-            text=f"SUCCESS — Files saved for experiment: {base}",
-            text_color=res.COLOR_SUCCESS
-        )
+
+        # Previously, this SUCCESS message was written unconditionally
+        # right after the par-write warning above — meaning even a
+        # correctly-detected par-write failure was invisible, since
+        # this line overwrote it on the same help_label widget one
+        # statement later. Now: .src/.stl genuinely did save either
+        # way, but if labasin_exsim.par could not be updated, the
+        # warning stays visible instead of being silently replaced.
+        if not ok_par:
+            self.help_label.configure(
+                text=(f"Files saved for experiment: {base}, BUT Advanced "
+                      f"Path Parameters could NOT be written to "
+                      f"labasin_exsim.par — {err_par}"),
+                text_color="#ffaa44"
+            )
+        else:
+            self.help_label.configure(
+                text=f"SUCCESS — Files saved for experiment: {base}",
+                text_color=res.COLOR_SUCCESS
+            )
 
     # ------------------------------------------------------------------
     # BBP SIMULATION
