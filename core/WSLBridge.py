@@ -919,6 +919,12 @@ class WSLBridge:
         from file presence/absence (e.g. .srf existing), since that
         requires guessing which files are method-specific.
 
+        This is a FALLBACK ONLY — the primary detection source for
+        every method is the "# METHOD = X" comment in the .src file,
+        which is unambiguous and already correctly distinguishes all
+        5 methods. This function only runs when that marker is missing
+        (very old runs, or runs made outside the GUI).
+
         Args:
             run_id       (str)      : BBP numeric run ID.
             outdata_path (str|None) : Full WSL path to the run's outdata
@@ -926,7 +932,8 @@ class WSLBridge:
                                        $BBP_DATA_DIR/outdata/<run_id>.
 
         Returns:
-            str: "GP", "EXSIM", or "UNKNOWN" if detection fails.
+            str: "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", or
+                 "UNKNOWN" if detection fails.
         """
         if not run_id:
             return "UNKNOWN"
@@ -951,7 +958,19 @@ class WSLBridge:
             method = m.group(1).strip().upper()
             if "EXSIM" in method:
                 return "EXSIM"
+            if "SONG" in method:
+                return "SONG"
             if "IRIKURA" in method:
+                # Distinguish Method 1 from Method 2 by looking for a
+                # "2" in the displayed text (e.g. "Irikura Recipe
+                # Method 2" or "IRIKURA2"). NOT confirmed against a
+                # real Irikura2 index.html — no such file has been
+                # available to check BBP's exact wording here, unlike
+                # the ExSIM confirmation above. If this fallback ever
+                # misclassifies a real Irikura2 run, check the actual
+                # HTML text and adjust this condition accordingly.
+                if "2" in method:
+                    return "IRIKURA2"
                 return "IRIKURA1"
             if "GP" in method:
                 return "GP"

@@ -35,6 +35,12 @@ EXSIM_METHOD    = "EXSIM"
 # beyond the method label itself.
 SONG_METHOD     = "SONG"
 
+# Irikura Recipe 2 shares IrikuraGenSrf and Jbsim with Irikura1, but
+# replaces Hfsims with a distinct high-frequency module (IrikuraHF,
+# Kamae et al. 1998) — confirmed against a real BBP-generated Irikura2
+# XML (run 5874832), not assumed from the Irikura1/Song pattern.
+IRIKURA2_METHOD = "IRIKURA2"
+
 
 # ------------------------------------------------------------------
 # MODULE DEFINITIONS
@@ -111,6 +117,32 @@ def _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name):
 \t\t\t\t<argument type="str">{GF_FILE}</argument>
 \t\t\t\t<argument type="str">{src_name}</argument>
 \t\t\t\t<argument type="str">{srf_name}</argument>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+def _irikura_hf_block(src_path, stl_path, src_name, srf_name, stl_name):
+    """IrikuraHF — Irikura Recipe 2's high-frequency module (Kamae et al.
+    1998 stochastic Green's function method), replacing Hfsims. Confirmed
+    against a real BBP-generated Irikura2 XML (run 5874832) — the
+    argument order is src_name, srf_name, GF_FILE, stl_name,
+    VELOCITY_MODEL, which is NOT the same order Hfsims/Jbsim use
+    (GF_FILE first) — this was verified from real data, not guessed by
+    analogy. staged_files order in the real file is src_path, GF_PATH,
+    stl_path."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>IrikuraHF</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t\t<file>{GF_PATH}</file>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{srf_name}</argument>
+\t\t\t\t<argument type="str">{GF_FILE}</argument>
 \t\t\t\t<argument type="str">{stl_name}</argument>
 \t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
 \t\t\t</arguments>
@@ -440,6 +472,88 @@ def _generate_song_rupture_xml(base_name, src_path, stl_path, acc_output=False):
     return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
 
 
+def _genhtml_block_irikura2(src_path, stl_path, src_name, stl_name):
+    """Same as _genhtml_block but with method argument 'IRIKURA2' instead
+    of 'GP'. Confirmed against a real BBP-generated Irikura2 XML (run
+    5874832) — same pattern as Song's GenHTML step. This also makes it
+    more likely (though still not directly confirmed) that Irikura1's
+    reuse of the plain GP-labeled _genhtml_block is the same kind of
+    bug this and Song's GenHTML step needed fixing for — worth checking
+    against a real Irikura1 XML if one becomes available."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>GenHTML</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t\t<argument type="NoneType">None</argument>
+\t\t\t\t<argument type="str">{IRIKURA2_METHOD}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+def _generate_irikura2_full_xml(base_name, src_path, stl_path, acc_output=False):
+    """
+    Irikura Recipe 2 — Full Pipeline.
+    IrikuraGenSrf → Jbsim → IrikuraHF → Match → Plot_Map → PlotSeis → RotD100 → FAS → GenHTML
+    Reuses Irikura1's rupture generator and LF module unchanged — only
+    the HF step differs (IrikuraHF instead of Hfsims). Confirmed against
+    a real BBP-generated Irikura2 XML (run 5874832), including the
+    GenHTML method argument.
+    """
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+    acc_value = "True" if acc_output else "False"
+
+    modules = "\n".join([
+        _irikura_gen_srf_block(src_path, src_name, srf_name),
+        _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _irikura_hf_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _match_block(stl_path, stl_name, acc_value),
+        _plot_map_block(src_path, stl_path, src_name, stl_name),
+        _plotseis_block(src_path, stl_path, src_name, stl_name),
+        _rotd100_block(stl_path, stl_name),
+        _fas_block(stl_path, stl_name),
+        _genhtml_block_irikura2(src_path, stl_path, src_name, stl_name),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_irikura2_quick_xml(base_name, src_path, stl_path, acc_output=False):
+    """Irikura Recipe 2 — Quick Run (IrikuraGenSrf + Jbsim + IrikuraHF + Match)."""
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+    acc_value = "True" if acc_output else "False"
+
+    modules = "\n".join([
+        _irikura_gen_srf_block(src_path, src_name, srf_name),
+        _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _irikura_hf_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _match_block(stl_path, stl_name, acc_value),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_irikura2_rupture_xml(base_name, src_path, stl_path, acc_output=False):
+    """Irikura Recipe 2 — Rupture Only (IrikuraGenSrf alone — identical
+    to Irikura1's rupture-only output, since both methods share the
+    same rupture generator)."""
+    srf_name = f"{base_name}.srf"
+    src_name = f"{base_name}.src"
+
+    modules = _irikura_gen_srf_block(src_path, src_name, srf_name)
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
 def _generate_quick_xml(base_name, src_path, stl_path, acc_output=False):
     """
     Quick Run — 4 core modules only.
@@ -512,7 +626,7 @@ def generate_xml(base_name, src_path, stl_path,
     Builds the BBP XML options file for the selected simulation profile.
 
     Args:
-        method (str): "GP", "EXSIM", "IRIKURA1", or "SONG"
+        method (str): "GP", "EXSIM", "IRIKURA1", "IRIKURA2", or "SONG"
         profile (str): "full", "quick", "rupture", or "custom"
     """
     if method == "EXSIM":
@@ -525,6 +639,14 @@ def generate_xml(base_name, src_path, stl_path,
             return _generate_irikura1_rupture_xml(base_name, src_path, stl_path, acc_output)
         else:
             return _generate_irikura1_full_xml(base_name, src_path, stl_path, acc_output)
+
+    if method == "IRIKURA2":
+        if profile == "quick":
+            return _generate_irikura2_quick_xml(base_name, src_path, stl_path, acc_output)
+        elif profile == "rupture":
+            return _generate_irikura2_rupture_xml(base_name, src_path, stl_path, acc_output)
+        else:
+            return _generate_irikura2_full_xml(base_name, src_path, stl_path, acc_output)
 
     if method == "SONG":
         if profile == "quick":
@@ -613,6 +735,29 @@ BBP_MODULES_IRIKURA1_QUICK = [
 
 BBP_MODULES_IRIKURA1_RUPTURE = [
     ("IrikuraGenSrf", "Generating rupture model (Irikura Recipe 1)..."),
+]
+
+BBP_MODULES_IRIKURA2_FULL = [
+    ("IrikuraGenSrf", "Generating rupture model (Irikura Recipe 2)..."),
+    ("Jbsim",         "Computing low-frequency seismograms..."),
+    ("IrikuraHF",     "Computing high-frequency seismograms (Kamae et al. 1998)..."),
+    ("Match",         "Combining LF + HF broadband seismograms..."),
+    ("Plot_Map",      "Generating station map..."),
+    ("PlotSeis",      "Plotting seismograms..."),
+    ("RotD100",       "Computing RotD50/100 response spectra..."),
+    ("FAS",           "Computing Fourier Amplitude Spectra..."),
+    ("GenHTML",       "Generating HTML report..."),
+]
+
+BBP_MODULES_IRIKURA2_QUICK = [
+    ("IrikuraGenSrf", "Generating rupture model (Irikura Recipe 2)..."),
+    ("Jbsim",         "Computing low-frequency seismograms..."),
+    ("IrikuraHF",     "Computing high-frequency seismograms (Kamae et al. 1998)..."),
+    ("Match",         "Combining LF + HF broadband seismograms..."),
+]
+
+BBP_MODULES_IRIKURA2_RUPTURE = [
+    ("IrikuraGenSrf", "Generating rupture model (Irikura Recipe 2)..."),
 ]
 
 BBP_MODULES_SONG_FULL = [
@@ -710,6 +855,18 @@ def get_modules_for_profile(profile, custom_modules=None, method="GP"):
                     for m in custom_modules if m in all_desc]
         else:
             return BBP_MODULES_IRIKURA1_FULL
+
+    if method == "IRIKURA2":
+        if profile == "quick":
+            return BBP_MODULES_IRIKURA2_QUICK
+        elif profile == "rupture":
+            return BBP_MODULES_IRIKURA2_RUPTURE
+        elif profile == "custom" and custom_modules:
+            all_desc = {m: d for m, d in BBP_MODULES_IRIKURA2_FULL}
+            return [(m, all_desc.get(m, f"Running {m}..."))
+                    for m in custom_modules if m in all_desc]
+        else:
+            return BBP_MODULES_IRIKURA2_FULL
 
     if method == "SONG":
         if profile == "quick":

@@ -154,15 +154,29 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
         # Each method's rupture generator has a different BBP module name.
         # Confirmed against real BBP-generated XML for each method (Song:
-        # run 4182486) rather than assumed — SongRMGSS is Song's rupture
-        # generator, exactly analogous to Genslip (GP) and IrikuraGenSrf
-        # (Irikura1). Unrecognized methods fall back to "Genslip" (GP).
+        # run 4182486, Irikura2: run 5874832) rather than assumed —
+        # Irikura2 shares IrikuraGenSrf with Irikura1 (same rupture
+        # generator either way). Unrecognized methods fall back to
+        # "Genslip" (GP).
         RUPTURE_KEYS = {
             "GP"      : "Genslip",
             "IRIKURA1": "IrikuraGenSrf",
+            "IRIKURA2": "IrikuraGenSrf",
             "SONG"    : "SongRMGSS",
         }
         self._rupture_key = RUPTURE_KEYS.get(method, "Genslip")
+
+        # Unlike the rupture generator, the HF module genuinely differs
+        # for Irikura2 — IrikuraHF (Kamae et al. 1998), not Hfsims —
+        # confirmed against the same real Irikura2 XML. Every other
+        # method still uses Hfsims.
+        HF_KEYS = {
+            "GP"      : "Hfsims",
+            "IRIKURA1": "Hfsims",
+            "IRIKURA2": "IrikuraHF",
+            "SONG"    : "Hfsims",
+        }
+        self._hf_key = HF_KEYS.get(method, "Hfsims")
 
         # Build the active module definitions for this method
         self._modules        = self._build_modules()
@@ -176,6 +190,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         TITLES = {
             "GP"      : "Custom Pipeline Selector — Graves & Pitarka",
             "IRIKURA1": "Custom Pipeline Selector — Irikura Recipe 1",
+            "IRIKURA2": "Custom Pipeline Selector — Irikura Recipe 2",
             "SONG"    : "Custom Pipeline Selector — Song RMG",
         }
         self.title(TITLES.get(method, "Custom Pipeline Selector"))
@@ -192,14 +207,24 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         self.after(250, self._draw_all)
 
     def _build_modules(self):
-        """Returns module definitions with the correct rupture generator name."""
+        """Returns module definitions with the correct rupture generator
+        and HF module names."""
         rk = self._rupture_key
+        hf = self._hf_key
         RK_DESCRIPTIONS = {
             "GP"      : "Generates slip distribution\nacross fault plane.\nProduces .srf + rupture map.",
             "IRIKURA1": "Irikura recipe rupture model.\nGenerates slip distribution\nProduces .srf + rupture map.",
+            "IRIKURA2": "Irikura recipe rupture model.\nGenerates slip distribution\nProduces .srf + rupture map.",
             "SONG"    : "Song pseudo-dynamic rupture\nmodel. Generates slip distribution\nProduces .srf + rupture map.",
         }
         rk_desc = RK_DESCRIPTIONS.get(self._method, RK_DESCRIPTIONS["GP"])
+
+        HF_DESCRIPTIONS = {
+            "Hfsims"  : "High frequency seismograms\nusing stochastic approach\nfor crustal scattering.",
+            "IrikuraHF": "High frequency seismograms\nvia Kamae et al. (1998)\nstochastic Green's functions.",
+        }
+        hf_desc = HF_DESCRIPTIONS.get(hf, HF_DESCRIPTIONS["Hfsims"])
+
         return {
             rk: {
                 "role"    : "Source Generator",
@@ -215,9 +240,9 @@ class CustomPipelinePanel(ctk.CTkToplevel):
                 "requires": [rk],
                 "always"  : False,
             },
-            "Hfsims": {
+            hf: {
                 "role"    : "HF Synthesis  1–10+ Hz",
-                "desc"    : "High frequency seismograms\nusing stochastic approach\nfor crustal scattering.",
+                "desc"    : hf_desc,
                 "req_text": f"Requires: {rk}",
                 "requires": [rk],
                 "always"  : False,
@@ -232,8 +257,8 @@ class CustomPipelinePanel(ctk.CTkToplevel):
             "Match": {
                 "role"    : "Broadband Merge",
                 "desc"    : "Merges LF + HF using\ncosine taper at ~1 Hz\ncrossover frequency.",
-                "req_text": "Requires: Jbsim + Hfsims",
-                "requires": ["Jbsim", "Hfsims"],
+                "req_text": f"Requires: Jbsim + {hf}",
+                "requires": ["Jbsim", hf],
                 "always"  : False,
             },
             "PlotSeis": {
@@ -268,12 +293,13 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
     def _build_arrows(self):
         rk = self._rupture_key
+        hf = self._hf_key
         return [
             (rk,      "Jbsim"),
-            (rk,      "Hfsims"),
+            (rk,      hf),
             (rk,      "Plot_Map"),
             ("Jbsim", "Match"),
-            ("Hfsims","Match"),
+            (hf,      "Match"),
             ("Match", "PlotSeis"),
             ("Match", "RotD100"),
             ("Match", "FAS"),
@@ -282,10 +308,11 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
     def _build_positions(self):
         rk = self._rupture_key
+        hf = self._hf_key
         return {
             rk          : (0.10, 0.46),
             "Jbsim"     : (0.30, 0.25),
-            "Hfsims"    : (0.30, 0.60),
+            hf          : (0.30, 0.60),
             "Plot_Map"  : (0.30, 0.86),
             "Match"     : (0.52, 0.42),
             "PlotSeis"  : (0.74, 0.16),
@@ -296,7 +323,8 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
     def _build_order(self):
         rk = self._rupture_key
-        return [rk, "Jbsim", "Hfsims", "Match",
+        hf = self._hf_key
+        return [rk, "Jbsim", hf, "Match",
                 "Plot_Map", "PlotSeis", "RotD100", "FAS", "GenHTML"]
 
     def _on_ready(self):
@@ -337,6 +365,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         HEADER_LABELS = {
             "GP"      : "Graves & Pitarka  —  LA Basin",
             "IRIKURA1": "Irikura Recipe 1  —  LA Basin",
+            "IRIKURA2": "Irikura Recipe 2  —  LA Basin",
             "SONG"    : "Song RMG  —  LA Basin",
         }
         ctk.CTkLabel(
@@ -701,7 +730,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         self._draw_all()
 
     def _reset_to_core(self):
-        self._selected = {self._rupture_key, "Jbsim", "Hfsims", "Match"}
+        self._selected = {self._rupture_key, "Jbsim", self._hf_key, "Match"}
         self._draw_all()
 
     def _update_summary(self):

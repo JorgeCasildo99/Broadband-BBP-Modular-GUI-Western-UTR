@@ -219,7 +219,7 @@ class ResultsPanel(ctk.CTkToplevel):
 
     def _detect_simulation_method(self):
         """
-        Returns "GP", "EXSIM", "IRIKURA1", "SONG", or "UNKNOWN".
+        Returns "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", or "UNKNOWN".
 
         Primary source: the "# METHOD = ..." comment appended to the
         .src file at generate-files time.
@@ -231,12 +231,12 @@ class ResultsPanel(ctk.CTkToplevel):
                 m = re.search(r'#\s*METHOD\s*=\s*(\w+)', src_content, re.IGNORECASE)
                 if m:
                     method = m.group(1).strip().upper()
-                    if method in ("GP", "EXSIM", "IRIKURA1", "SONG"):
+                    if method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG"):
                         return method
 
         # Fallback: read from BBP's HTML report
         detected = WSLBridge.detect_simulation_method(self._run_id, self._outdata)
-        if detected in ("GP", "EXSIM", "IRIKURA1", "SONG"):
+        if detected in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG"):
             return detected
 
         # Final fallback: validation runs default to GP
@@ -376,17 +376,19 @@ class ResultsPanel(ctk.CTkToplevel):
         ).pack(side="left", padx=10, pady=12)
 
         # Method badge — shown for every run
-        if self._sim_method in ("GP", "EXSIM", "IRIKURA1", "SONG"):
+        if self._sim_method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG"):
             method_colors = {
                 "GP"      : ("#0a2a3a", "#3b8ed0"),
                 "EXSIM"   : ("#3a1a00", "#ffaa44"),
                 "IRIKURA1": ("#0a2a0a", "#22aa55"),
+                "IRIKURA2": ("#0a2a28", "#22ccaa"),
                 "SONG"    : ("#2a0a3a", "#8855cc"),
             }
             method_labels = {
                 "GP"      : "GP",
                 "EXSIM"   : "EXSIM",
                 "IRIKURA1": "IRIKURA 1",
+                "IRIKURA2": "IRIKURA 2",
                 "SONG"    : "SONG",
             }
             bg_color, fg_color = method_colors[self._sim_method]
@@ -517,15 +519,18 @@ class ResultsPanel(ctk.CTkToplevel):
         Delegates tab building to the appropriate method-specific view class.
         """
         try:
-            from ui.results.GPResults      import GPResults
-            from ui.results.ExSimResults   import ExSimResults
-            from ui.results.IrikuraResults import IrikuraResults
-            from ui.results.SongResults    import SongResults
+            from ui.results.GPResults       import GPResults
+            from ui.results.ExSimResults    import ExSimResults
+            from ui.results.IrikuraResults  import IrikuraResults
+            from ui.results.Irikura2Results import Irikura2Results
+            from ui.results.SongResults     import SongResults
 
             if self._is_exsim:
                 view = ExSimResults(self)
             elif self._sim_method == "IRIKURA1":
                 view = IrikuraResults(self)
+            elif self._sim_method == "IRIKURA2":
+                view = Irikura2Results(self)
             elif self._sim_method == "SONG":
                 view = SongResults(self)
             else:

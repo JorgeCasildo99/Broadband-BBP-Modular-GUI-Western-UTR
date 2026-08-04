@@ -111,17 +111,19 @@ class SimulationPanel(ctk.CTkToplevel):
             text_color="white"
         ).pack(side="left", padx=25, pady=15)
 
-        if self._method in ("GP", "EXSIM", "IRIKURA1", "SONG"):
+        if self._method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG"):
             method_colors = {
                 "GP"      : ("#0a2a3a", "#3b8ed0"),
                 "EXSIM"   : ("#3a1a00", "#ffaa44"),
                 "IRIKURA1": ("#0a2a0a", "#22aa55"),
+                "IRIKURA2": ("#0a2a28", "#22ccaa"),
                 "SONG"    : ("#2a0a3a", "#8855cc"),
             }
             label_text = {
                 "GP"      : "GP",
                 "EXSIM"   : "EXSIM",
                 "IRIKURA1": "IRIKURA 1",
+                "IRIKURA2": "IRIKURA 2",
                 "SONG"    : "SONG",
             }
             bg_color, fg_color = method_colors[self._method]
