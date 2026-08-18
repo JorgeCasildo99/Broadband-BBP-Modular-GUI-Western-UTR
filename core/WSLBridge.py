@@ -932,7 +932,7 @@ class WSLBridge:
                                        $BBP_DATA_DIR/outdata/<run_id>.
 
         Returns:
-            str: "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", or
+            str: "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", or
                  "UNKNOWN" if detection fails.
         """
         if not run_id:
@@ -974,6 +974,16 @@ class WSLBridge:
                 return "IRIKURA1"
             if "GP" in method:
                 return "GP"
+            if "UCSB" in method:
+                # Confirmed directly against a real UCSB index.html
+                # (run 6907992): the field reads exactly "UCSB", the
+                # same confirmation strength as the EXSIM case above.
+                # This fallback matters more for UCSB than for other
+                # methods: UCSB's .src file has NO "# METHOD = UCSB"
+                # marker at all (unlike every other method), so UCSB
+                # runs may rely on this HTML fallback more often in
+                # practice, not just for very old runs.
+                return "UCSB"
             return method
 
         return "UNKNOWN"

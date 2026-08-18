@@ -70,6 +70,18 @@ class ResultsPanel(ctk.CTkToplevel):
         self._sim_method = self._detect_simulation_method()
         self._is_exsim   = (self._sim_method == "EXSIM")
 
+        # UCSB has no Rupture Map or Slip Distribution output, same as
+        # ExSIM, but for a different reason: ExSIM has no kinematic
+        # rupture model at all, while UCSB's rupture generator (UCrmg,
+        # using FFSP) does model rupture but writes it in FFSP's own
+        # native format rather than a BBP-standard .srf or rupture map
+        # PNG — confirmed by direct inspection of a completed UCSB run
+        # (no .srf/.png anywhere in outdata/tmpdata/indata; instead
+        # FFSP_OUTPUT.bst + 25 numbered realization files). Kept
+        # separate from _is_exsim, which has other, ExSIM-specific
+        # meaning elsewhere (e.g. StationDetailPanel).
+        self._has_rupture_output = self._sim_method not in ("EXSIM", "UCSB")
+
         self._build_ui()
         self.after(200, self._on_ready)
         self.after(400, self._load_all)
@@ -219,7 +231,7 @@ class ResultsPanel(ctk.CTkToplevel):
 
     def _detect_simulation_method(self):
         """
-        Returns "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", or "UNKNOWN".
+        Returns "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", or "UNKNOWN".
 
         Primary source: the "# METHOD = ..." comment appended to the
         .src file at generate-files time.
@@ -231,12 +243,12 @@ class ResultsPanel(ctk.CTkToplevel):
                 m = re.search(r'#\s*METHOD\s*=\s*(\w+)', src_content, re.IGNORECASE)
                 if m:
                     method = m.group(1).strip().upper()
-                    if method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG"):
+                    if method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB"):
                         return method
 
         # Fallback: read from BBP's HTML report
         detected = WSLBridge.detect_simulation_method(self._run_id, self._outdata)
-        if detected in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG"):
+        if detected in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB"):
             return detected
 
         # Final fallback: validation runs default to GP
@@ -376,13 +388,14 @@ class ResultsPanel(ctk.CTkToplevel):
         ).pack(side="left", padx=10, pady=12)
 
         # Method badge — shown for every run
-        if self._sim_method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG"):
+        if self._sim_method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB"):
             method_colors = {
                 "GP"      : ("#0a2a3a", "#3b8ed0"),
                 "EXSIM"   : ("#3a1a00", "#ffaa44"),
                 "IRIKURA1": ("#0a2a0a", "#22aa55"),
                 "IRIKURA2": ("#0a2a28", "#22ccaa"),
                 "SONG"    : ("#2a0a3a", "#8855cc"),
+                "UCSB"    : ("#3a0a20", "#cc3366"),
             }
             method_labels = {
                 "GP"      : "GP",
@@ -390,6 +403,7 @@ class ResultsPanel(ctk.CTkToplevel):
                 "IRIKURA1": "IRIKURA 1",
                 "IRIKURA2": "IRIKURA 2",
                 "SONG"    : "SONG",
+                "UCSB"    : "UCSB",
             }
             bg_color, fg_color = method_colors[self._sim_method]
             ctk.CTkLabel(
@@ -488,12 +502,13 @@ class ResultsPanel(ctk.CTkToplevel):
         )
         self.tabs.pack(fill="both", expand=True)
 
-        if self._is_exsim:
-            # ExSIM has no kinematic rupture model — no .srf file exists,
-            # so Rupture Map and Slip Distribution are not applicable.
-            # Source & Stations IS included — ExSIM generates a .src and
-            # .stl file just like GP, so the fault parameters and station
-            # list are always available to review.
+        if not self._has_rupture_output:
+            # Neither ExSIM (no kinematic rupture model) nor UCSB (rupture
+            # modeled, but written in FFSP's own format, not a BBP .srf)
+            # have a Rupture Map or Slip Distribution to show.
+            # Source & Stations IS included for both — each still
+            # generates a .src and .stl file, so fault parameters and
+            # the station list are always available to review.
             tab_names = ["Simulation Info", "Source & Stations", "Station Map"]
         else:
             tab_names = ["Simulation Info", "Source & Stations", "Station Map", "Rupture Map", "Slip Distribution"]
@@ -524,6 +539,7 @@ class ResultsPanel(ctk.CTkToplevel):
             from ui.results.IrikuraResults  import IrikuraResults
             from ui.results.Irikura2Results import Irikura2Results
             from ui.results.SongResults     import SongResults
+            from ui.results.UCSBResults     import UCSBResults
 
             if self._is_exsim:
                 view = ExSimResults(self)
@@ -533,6 +549,8 @@ class ResultsPanel(ctk.CTkToplevel):
                 view = Irikura2Results(self)
             elif self._sim_method == "SONG":
                 view = SongResults(self)
+            elif self._sim_method == "UCSB":
+                view = UCSBResults(self)
             else:
                 # GP and any future kinematic methods default to GPResults
                 view = GPResults(self)

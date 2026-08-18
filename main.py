@@ -26,6 +26,7 @@ from ui.GravesAndPitarka.GravesAndPitarkaPanel import GravesAndPitarkaPanel
 from ui.Irikura.IrikuraPanel                   import IrikuraPanel
 from ui.Irikura2.Irikura2Panel                 import Irikura2Panel
 from ui.Song.SongPanel                         import SongPanel
+from ui.UCSB.UCSBPanel                         import UCSBPanel
 from ui.RuptureGenerator.RuptureGeneratorPanel import RuptureGeneratorPanel
 from ui.ExSIM.ExSimPanel             import ExSimPanel
 from ui.SimulationPanel import SimulationPanel
@@ -246,6 +247,7 @@ class MainPanel(ctk.CTk):
             open_irikura1_callback           = self.show_irikura_module,
             open_irikura2_callback           = self.show_irikura2_module,
             open_song_callback               = self.show_song_module,
+            open_ucsb_callback               = self.show_ucsb_module,
             open_results_callback            = self.open_results_history,
             open_config_callback             = self.open_configuration_panel,
             open_validation_callback         = self.open_validation_panel,
@@ -597,6 +599,64 @@ class MainPanel(ctk.CTk):
         )
         self.song_module.pack(fill="both", expand=True)
 
+    def show_ucsb_module(self):
+        """
+        Switches from Dashboard to UCSBPanel.
+        Same structure as show_song_module but with UCSB's theme.
+        """
+        for widget in self.container.winfo_children():
+            widget.destroy()
+
+        nav_bar = ctk.CTkFrame(
+            self.container, height=44, fg_color="#111111", corner_radius=6
+        )
+        nav_bar.pack(fill="x", pady=(0, 6))
+        nav_bar.pack_propagate(False)
+
+        ctk.CTkButton(
+            nav_bar,
+            text="← Back to Dashboard",
+            width=160, height=30,
+            fg_color="transparent",
+            border_width=1, border_color="#444444",
+            text_color="white", hover_color="#2a2a2a",
+            command=self.load_dashboard
+        ).pack(side="left", padx=10, pady=7)
+
+        title_frame = ctk.CTkFrame(nav_bar, fg_color="transparent")
+        title_frame.pack(side="left", expand=True, fill="both")
+
+        ctk.CTkLabel(
+            title_frame,
+            text="UCSB",
+            font=(res.FONT_LABEL[0], 13, "bold"),
+            text_color="#cc3366"
+        ).pack(side="left", padx=(0, 6), pady=7)
+
+        ctk.CTkLabel(
+            title_frame,
+            text="Crempien & Archuleta (2015), JA19_2S source spectrum  —  Broadband Ground Motion Simulation  —  LABasin500",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="gray"
+        ).pack(side="left", pady=7)
+
+        session_name = os.path.basename(AppConfig.current_session_folder) \
+            if AppConfig.current_session_folder else "No session"
+        ctk.CTkLabel(
+            nav_bar,
+            text=f"Session: {session_name}",
+            font=(res.FONT_LABEL[0], 11),
+            text_color="gray"
+        ).pack(side="right", padx=15, pady=7)
+
+        AppConfig.simulation_method = "UCSB"
+
+        self.ucsb_module = UCSBPanel(
+            self.container,
+            on_run_callback=self.show_simulation_panel
+        )
+        self.ucsb_module.pack(fill="both", expand=True)
+
     def show_rupture_generator_module(self):
         """
         Switches from Dashboard to RuptureGeneratorPanel.
@@ -707,6 +767,10 @@ class MainPanel(ctk.CTk):
             self.show_song_module()
             if hasattr(self, "song_module") and self.song_module:
                 self.song_module.load_from_src(params, stations)
+        elif method == "UCSB":
+            self.show_ucsb_module()
+            if hasattr(self, "ucsb_module") and self.ucsb_module:
+                self.ucsb_module.load_from_src(params, stations)
         elif method == "EXSIM":
             self.show_exsim_module()
             if hasattr(self, "exsim_module") and self.exsim_module:

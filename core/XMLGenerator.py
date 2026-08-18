@@ -41,6 +41,15 @@ SONG_METHOD     = "SONG"
 # XML (run 5874832), not assumed from the Irikura1/Song pattern.
 IRIKURA2_METHOD = "IRIKURA2"
 
+# UCSB uses its own low-frequency Green's Function file, under a
+# different GF subdirectory (ucsb/lf/) than GP/Irikura/Song (gp/) —
+# confirmed against a real BBP-generated UCSB scenario XML (run
+# 6907992). UCSB's rupture generator (UCrmg) and its combined LF+HF
+# synthesis module (Syn1D) both stage this same file.
+UCSB_GF_FILE  = "nr02-vs500_lf.vel"
+UCSB_GF_PATH  = f"$BBP_INSTALL_GF/{VELOCITY_MODEL}/ucsb/lf/{UCSB_GF_FILE}"
+UCSB_METHOD   = "UCSB"
+
 
 # ------------------------------------------------------------------
 # MODULE DEFINITIONS
@@ -292,6 +301,102 @@ def _genhtml_block_exsim(src_path, stl_path, src_name, stl_name):
 \t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
 \t\t\t\t<argument type="NoneType">None</argument>
 \t\t\t\t<argument type="str">{EXSIM_METHOD}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+# ------------------------------------------------------------------
+# UCSB MODULE DEFINITIONS
+# UCSB does NOT use the rupture + separate-LF + separate-HF + Match
+# pattern every other method in this GUI follows. It has only two
+# simulation modules: UCrmg (rupture generator) feeds directly into
+# Syn1D (combined broadband LF+HF synthesis, one step, no Match).
+# A CopySeismograms step follows Syn1D before the shared plotting/
+# analysis modules — this does not exist in any other method's
+# pipeline. All of this is confirmed against a real BBP-generated
+# UCSB scenario XML (run 6907992), not inferred by analogy.
+# ------------------------------------------------------------------
+
+def _ucrmg_block(src_path, src_name, srf_name):
+    """UCrmg — UCSB's rupture generator. Requires CORNER_FREQ,
+    CORNER_FREQ_1, and CORNER_FREQ_2 to be present in the .src file
+    (JA19_2S double-corner-frequency source model) — confirmed by a
+    real KeyError crash ('corner_freq_1') when they were missing."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>UCrmg</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{UCSB_GF_PATH}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{UCSB_GF_FILE}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{srf_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+def _syn1d_block(src_path, stl_path, src_name, srf_name, stl_name):
+    """Syn1D — UCSB's combined low+high frequency broadband synthesis.
+    Unlike Jbsim/Hfsims, there is no separate HF module and no Match
+    step afterward — Syn1D produces the final broadband seismograms
+    directly from the .srf UCrmg generated."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>Syn1D</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{UCSB_GF_PATH}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{UCSB_GF_FILE}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{srf_name}</argument>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+def _copyseismograms_block(stl_path, stl_name):
+    """CopySeismograms — UCSB-only step that runs after Syn1D and
+    before Plot_Map/PlotSeis/RotD100/FAS/GenHTML. No equivalent exists
+    in GP/Irikura/Song/ExSIM. The hybrid=True keyword argument is
+    confirmed from the real reference XML; its exact purpose (likely
+    staging Syn1D's output into the naming convention the shared
+    plotting/analysis modules expect) is not yet confirmed against
+    BBP's source."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>CopySeismograms</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t</arguments>
+\t\t\t<keyword_arguments>
+\t\t\t\t<keyword_argument keyword="hybrid" type="bool">True</keyword_argument>
+\t\t\t</keyword_arguments>
+\t\t</BBP_Module>"""
+
+
+def _genhtml_block_ucsb(src_path, stl_path, src_name, stl_name):
+    """Same as _genhtml_block but with method argument 'UCSB' instead
+    of 'GP'. Confirmed against a real BBP-generated UCSB scenario XML
+    (run 6907992)."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>GenHTML</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t\t<argument type="NoneType">None</argument>
+\t\t\t\t<argument type="str">{UCSB_METHOD}</argument>
 \t\t\t</arguments>
 \t\t</BBP_Module>"""
 
@@ -615,6 +720,67 @@ def _generate_exsim_xml(base_name, src_path, stl_path, acc_output=False):
     return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
 
 
+def _generate_ucsb_full_xml(base_name, src_path, stl_path, acc_output=False):
+    """
+    UCSB — Full Pipeline.
+    UCrmg → Syn1D → CopySeismograms → Plot_Map → PlotSeis → RotD100 → FAS → GenHTML
+    No separate HF module and no Match step — Syn1D produces the final
+    broadband seismograms directly. Matches a real BBP-generated UCSB
+    scenario XML exactly (run 6907992), module-for-module and
+    argument-for-argument. acc_output is accepted for API consistency
+    but has no effect here, same as ExSIM.
+    """
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+
+    modules = "\n".join([
+        _ucrmg_block(src_path, src_name, srf_name),
+        _syn1d_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _copyseismograms_block(stl_path, stl_name),
+        _plot_map_block(src_path, stl_path, src_name, stl_name),
+        _plotseis_block(src_path, stl_path, src_name, stl_name),
+        _rotd100_block(stl_path, stl_name),
+        _fas_block(stl_path, stl_name),
+        _genhtml_block_ucsb(src_path, stl_path, src_name, stl_name),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_ucsb_quick_xml(base_name, src_path, stl_path, acc_output=False):
+    """UCSB — Quick Run (UCrmg + Syn1D + CopySeismograms).
+    Produces broadband seismograms, skips plotting/analysis. NOTE: this
+    stopping point is inferred by analogy to GP/Irikura/Song's quick
+    profile (stop after broadband seismograms exist, before Plot_Map)
+    — the reference XML available is a full run only, so this specific
+    3-module combination has not been confirmed against a real
+    BBP-generated UCSB quick-run XML."""
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+
+    modules = "\n".join([
+        _ucrmg_block(src_path, src_name, srf_name),
+        _syn1d_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _copyseismograms_block(stl_path, stl_name),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_ucsb_rupture_xml(base_name, src_path, stl_path, acc_output=False):
+    """UCSB — Rupture Only (UCrmg alone).
+    Produces the .srf slip distribution file only, same intent as
+    Genslip/IrikuraGenSrf/SongRMGSS rupture-only profiles."""
+    srf_name = f"{base_name}.srf"
+    src_name = f"{base_name}.src"
+
+    modules = _ucrmg_block(src_path, src_name, srf_name)
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
 # ------------------------------------------------------------------
 # PUBLIC API
 # ------------------------------------------------------------------
@@ -626,11 +792,19 @@ def generate_xml(base_name, src_path, stl_path,
     Builds the BBP XML options file for the selected simulation profile.
 
     Args:
-        method (str): "GP", "EXSIM", "IRIKURA1", "IRIKURA2", or "SONG"
+        method (str): "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", or "UCSB"
         profile (str): "full", "quick", "rupture", or "custom"
     """
     if method == "EXSIM":
         return _generate_exsim_xml(base_name, src_path, stl_path, acc_output)
+
+    if method == "UCSB":
+        if profile == "quick":
+            return _generate_ucsb_quick_xml(base_name, src_path, stl_path, acc_output)
+        elif profile == "rupture":
+            return _generate_ucsb_rupture_xml(base_name, src_path, stl_path, acc_output)
+        else:
+            return _generate_ucsb_full_xml(base_name, src_path, stl_path, acc_output)
 
     if method == "IRIKURA1":
         if profile == "quick":
@@ -792,6 +966,27 @@ BBP_MODULES_EXSIM = [
     ("GenHTML",  "Generating HTML summary report..."),
 ]
 
+BBP_MODULES_UCSB_FULL = [
+    ("UCrmg",           "Generating rupture model (UCSB kinematic source)..."),
+    ("Syn1D",           "Computing broadband seismograms (combined LF+HF)..."),
+    ("CopySeismograms", "Preparing seismograms for analysis..."),
+    ("Plot_Map",        "Generating fault trace and station map..."),
+    ("PlotSeis",        "Plotting seismograms for all stations..."),
+    ("RotD100",         "Computing RotD50/RotD100 response spectra..."),
+    ("FAS",             "Computing Fourier Amplitude Spectra..."),
+    ("GenHTML",         "Generating HTML summary report..."),
+]
+
+BBP_MODULES_UCSB_QUICK = [
+    ("UCrmg",           "Generating rupture model (UCSB kinematic source)..."),
+    ("Syn1D",           "Computing broadband seismograms (combined LF+HF)..."),
+    ("CopySeismograms", "Preparing seismograms for analysis..."),
+]
+
+BBP_MODULES_UCSB_RUPTURE = [
+    ("UCrmg", "Generating rupture model (UCSB kinematic source)..."),
+]
+
 # Default — kept for backward compatibility with any existing imports
 BBP_MODULES = BBP_MODULES_FULL
 
@@ -879,6 +1074,18 @@ def get_modules_for_profile(profile, custom_modules=None, method="GP"):
                     for m in custom_modules if m in all_desc]
         else:
             return BBP_MODULES_SONG_FULL
+
+    if method == "UCSB":
+        if profile == "quick":
+            return BBP_MODULES_UCSB_QUICK
+        elif profile == "rupture":
+            return BBP_MODULES_UCSB_RUPTURE
+        elif profile == "custom" and custom_modules:
+            all_desc = {m: d for m, d in BBP_MODULES_UCSB_FULL}
+            return [(m, all_desc.get(m, f"Running {m}..."))
+                    for m in custom_modules if m in all_desc]
+        else:
+            return BBP_MODULES_UCSB_FULL
 
     # GP (default)
     if profile == "quick":

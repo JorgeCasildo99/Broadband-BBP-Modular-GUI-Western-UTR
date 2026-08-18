@@ -111,13 +111,14 @@ class SimulationPanel(ctk.CTkToplevel):
             text_color="white"
         ).pack(side="left", padx=25, pady=15)
 
-        if self._method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG"):
+        if self._method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB"):
             method_colors = {
                 "GP"      : ("#0a2a3a", "#3b8ed0"),
                 "EXSIM"   : ("#3a1a00", "#ffaa44"),
                 "IRIKURA1": ("#0a2a0a", "#22aa55"),
                 "IRIKURA2": ("#0a2a28", "#22ccaa"),
                 "SONG"    : ("#2a0a3a", "#8855cc"),
+                "UCSB"    : ("#3a0a20", "#cc3366"),
             }
             label_text = {
                 "GP"      : "GP",
@@ -125,6 +126,7 @@ class SimulationPanel(ctk.CTkToplevel):
                 "IRIKURA1": "IRIKURA 1",
                 "IRIKURA2": "IRIKURA 2",
                 "SONG"    : "SONG",
+                "UCSB"    : "UCSB",
             }
             bg_color, fg_color = method_colors[self._method]
             ctk.CTkLabel(
@@ -382,10 +384,22 @@ class SimulationPanel(ctk.CTkToplevel):
         # (e.g. Plot_Map prints "Plot MAP", RotD100 prints "RotDXX"),
         # so explicit aliases are used for those rather than relying on
         # name matching alone.
+        # UCrmg's banner is confirmed from a real console log:
+        # "-----------------------------UCSB Rupture Generator-----------------------------"
+        # — this does NOT contain "UCRMG" anywhere, so without this
+        # alias the module would never be detected and progress would
+        # silently stall on this step. Syn1D and CopySeismograms have
+        # no confirmed real banner text yet (no console log has been
+        # seen for either) — they fall back to plain name matching
+        # ("SYN1D" / "COPYSEISMOGRAMS" as substrings), which may or may
+        # not match BBP's actual output. Flagging as unconfirmed rather
+        # than assumed correct, same status Song/IrikuraHF had before a
+        # real run settled it.
         banner_aliases = {
             "Plot_Map": ["PLOT MAP", "PLOTMAP"],
             "RotD100" : ["ROTDXX", "ROTD100"],
             "ExSim"   : ["EXSIM"],
+            "UCrmg"   : ["UCSBRUPTUREGENERATOR"],
         }
 
         stripped_upper = stripped.upper()

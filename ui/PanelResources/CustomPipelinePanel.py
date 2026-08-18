@@ -163,13 +163,22 @@ class CustomPipelinePanel(ctk.CTkToplevel):
             "IRIKURA1": "IrikuraGenSrf",
             "IRIKURA2": "IrikuraGenSrf",
             "SONG"    : "SongRMGSS",
+            "UCSB"    : "UCrmg",
         }
         self._rupture_key = RUPTURE_KEYS.get(method, "Genslip")
 
         # Unlike the rupture generator, the HF module genuinely differs
         # for Irikura2 — IrikuraHF (Kamae et al. 1998), not Hfsims —
         # confirmed against the same real Irikura2 XML. Every other
-        # method still uses Hfsims.
+        # method still uses Hfsims. UCSB has no entry here at all: it
+        # does not have a separate LF/HF split — UCrmg feeds directly
+        # into Syn1D, a single combined broadband synthesis module, with
+        # no Match step. UCSB's pipeline shape is built entirely
+        # separately in _build_modules/_build_arrows/_build_positions/
+        # _build_order rather than through this rk/hf substitution
+        # pattern, since it genuinely doesn't fit the fork-then-merge
+        # shape every other method shares — confirmed against a real
+        # BBP-generated UCSB scenario XML (run 6907992).
         HF_KEYS = {
             "GP"      : "Hfsims",
             "IRIKURA1": "Hfsims",
@@ -192,6 +201,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
             "IRIKURA1": "Custom Pipeline Selector — Irikura Recipe 1",
             "IRIKURA2": "Custom Pipeline Selector — Irikura Recipe 2",
             "SONG"    : "Custom Pipeline Selector — Song RMG",
+            "UCSB"    : "Custom Pipeline Selector — UCSB",
         }
         self.title(TITLES.get(method, "Custom Pipeline Selector"))
         self.configure(fg_color="#0d0d0d")
@@ -209,6 +219,66 @@ class CustomPipelinePanel(ctk.CTkToplevel):
     def _build_modules(self):
         """Returns module definitions with the correct rupture generator
         and HF module names."""
+        if self._method == "UCSB":
+            return {
+                "UCrmg": {
+                    "role"    : "Source Generator",
+                    "desc"    : "UCSB kinematic rupture model\n(JA19_2S double-corner-freq.\nsource spectrum). Produces .srf.",
+                    "req_text": "Always required",
+                    "requires": [],
+                    "always"  : True,
+                },
+                "Syn1D": {
+                    "role"    : "Broadband Synthesis",
+                    "desc"    : "Combined LF+HF broadband\nseismograms in one step —\nno separate HF module, no Match.",
+                    "req_text": "Requires: UCrmg",
+                    "requires": ["UCrmg"],
+                    "always"  : False,
+                },
+                "CopySeismograms": {
+                    "role"    : "Seismogram Finalize",
+                    "desc"    : "UCSB-only step. Prepares\nSyn1D output for the shared\nplotting/analysis modules.",
+                    "req_text": "Requires: Syn1D",
+                    "requires": ["Syn1D"],
+                    "always"  : False,
+                },
+                "Plot_Map": {
+                    "role"    : "Map — Independent",
+                    "desc"    : "Geographic station and\nfault trace map PNG.\nIndependent of Syn1D.",
+                    "req_text": "Requires: UCrmg",
+                    "requires": ["UCrmg"],
+                    "always"  : False,
+                },
+                "PlotSeis": {
+                    "role"    : "Seismogram Plots",
+                    "desc"    : "Velocity + acceleration\nseismogram plots per\nstation as PNG files.",
+                    "req_text": "Requires: CopySeismograms",
+                    "requires": ["CopySeismograms"],
+                    "always"  : False,
+                },
+                "RotD100": {
+                    "role"    : "Response Spectra",
+                    "desc"    : "RotD50 and RotD100\nresponse spectra for\neach station.",
+                    "req_text": "Requires: CopySeismograms",
+                    "requires": ["CopySeismograms"],
+                    "always"  : False,
+                },
+                "FAS": {
+                    "role"    : "Fourier Spectrum",
+                    "desc"    : "Fourier Amplitude\nSpectrum per station\n(NS, EW, Smoothed EAS).",
+                    "req_text": "Requires: CopySeismograms",
+                    "requires": ["CopySeismograms"],
+                    "always"  : False,
+                },
+                "GenHTML": {
+                    "role"    : "HTML Report",
+                    "desc"    : "Complete HTML summary\nreport with all results\nand linked output files.",
+                    "req_text": "Requires: CopySeismograms",
+                    "requires": ["CopySeismograms"],
+                    "always"  : False,
+                },
+            }
+
         rk = self._rupture_key
         hf = self._hf_key
         RK_DESCRIPTIONS = {
@@ -292,6 +362,17 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         }
 
     def _build_arrows(self):
+        if self._method == "UCSB":
+            return [
+                ("UCrmg", "Syn1D"),
+                ("UCrmg", "Plot_Map"),
+                ("Syn1D", "CopySeismograms"),
+                ("CopySeismograms", "PlotSeis"),
+                ("CopySeismograms", "RotD100"),
+                ("CopySeismograms", "FAS"),
+                ("CopySeismograms", "GenHTML"),
+            ]
+
         rk = self._rupture_key
         hf = self._hf_key
         return [
@@ -307,6 +388,18 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         ]
 
     def _build_positions(self):
+        if self._method == "UCSB":
+            return {
+                "UCrmg"           : (0.10, 0.46),
+                "Syn1D"           : (0.32, 0.46),
+                "Plot_Map"        : (0.32, 0.86),
+                "CopySeismograms" : (0.54, 0.46),
+                "PlotSeis"        : (0.76, 0.16),
+                "RotD100"         : (0.76, 0.38),
+                "FAS"             : (0.76, 0.60),
+                "GenHTML"         : (0.76, 0.82),
+            }
+
         rk = self._rupture_key
         hf = self._hf_key
         return {
@@ -322,6 +415,10 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         }
 
     def _build_order(self):
+        if self._method == "UCSB":
+            return ["UCrmg", "Syn1D", "CopySeismograms",
+                    "Plot_Map", "PlotSeis", "RotD100", "FAS", "GenHTML"]
+
         rk = self._rupture_key
         hf = self._hf_key
         return [rk, "Jbsim", hf, "Match",
@@ -367,6 +464,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
             "IRIKURA1": "Irikura Recipe 1  —  LA Basin",
             "IRIKURA2": "Irikura Recipe 2  —  LA Basin",
             "SONG"    : "Song RMG  —  LA Basin",
+            "UCSB"    : "UCSB  —  LA Basin",
         }
         ctk.CTkLabel(
             bar,
@@ -730,7 +828,10 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         self._draw_all()
 
     def _reset_to_core(self):
-        self._selected = {self._rupture_key, "Jbsim", self._hf_key, "Match"}
+        if self._method == "UCSB":
+            self._selected = {"UCrmg", "Syn1D", "CopySeismograms"}
+        else:
+            self._selected = {self._rupture_key, "Jbsim", self._hf_key, "Match"}
         self._draw_all()
 
     def _update_summary(self):
