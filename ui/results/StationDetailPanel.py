@@ -40,7 +40,7 @@ class StationDetailPanel(ctk.CTkToplevel):
     def __init__(self, master, station_id, outdata,
                  fas_folder, run_id, profile="full",
                  is_validation=False, val_event_short="",
-                 is_exsim=False):
+                 is_exsim=False, has_lf_hf=True):
         super().__init__(master)
 
         self.sid             = station_id
@@ -51,6 +51,16 @@ class StationDetailPanel(ctk.CTkToplevel):
         self.is_validation   = is_validation
         self.val_event_short = val_event_short
         self.is_exsim        = is_exsim
+        # Distinct from is_exsim: controls the LF & HF tab specifically.
+        # ExSIM (no Jbsim/Hfsims split) and UCSB (Syn1D produces
+        # combined broadband output directly, with intermediate files
+        # under tmpdata/.../syn1D_lf_*/syn1D_hf_*, not the flat
+        # {run_id}.{sid}-lf.bbp/-hf.bbp naming _build_lfhf_tab() looks
+        # for) both pass False here. Kept separate from is_exsim since
+        # a method could in principle have one property without the
+        # other, and is_exsim also drives the unrelated ExSIM title
+        # badge below.
+        self.has_lf_hf        = has_lf_hf
 
         self.title(f"Station — {station_id}")
         self.geometry("1050x780")
@@ -128,10 +138,11 @@ class StationDetailPanel(ctk.CTkToplevel):
         self.tabs.pack(fill="both", expand=True, padx=10, pady=(10, 0))
 
         # Base tabs always present.
-        # LF & HF is omitted for ExSIM stations — ExSIM has no Jbsim/
-        # Hfsims split (it's a single-stage stochastic method), so
-        # there is no intermediate LF/HF data to show.
-        if self.is_exsim:
+        # LF & HF is omitted when has_lf_hf is False — true for ExSIM
+        # (no Jbsim/Hfsims split, single-stage stochastic method) and
+        # for UCSB (Syn1D produces combined broadband output directly;
+        # no {run_id}.{sid}-lf.bbp/-hf.bbp files exist for it to show).
+        if not self.has_lf_hf:
             tab_names = ["Velocity", "Acceleration", "RotD50/100", "FAS", "FAS & HVSR", "Raw Data"]
         else:
             tab_names = ["Velocity", "Acceleration", "LF & HF", "RotD50/100", "FAS", "FAS & HVSR", "Raw Data"]
@@ -141,11 +152,13 @@ class StationDetailPanel(ctk.CTkToplevel):
             f"{self.outdata}/{self.val_event_short}_{self.run_id}_{self.sid}_gmpe.png"
         )
 
-        # Validation-only tabs. Index 2 here assumes the non-ExSIM
-        # tab_names branch above (validation runs are always GP —
-        # see ResultsPanel._detect_simulation_method, which resolves
-        # validation runs to "GP" before is_exsim is ever computed —
-        # so is_exsim and is_validation are never both True together).
+        # Validation-only tabs, inserted at a fixed index (2) regardless
+        # of which tab_names branch above was used — this lands right
+        # after "Acceleration" either way (before "LF & HF" when present,
+        # or before "RotD50/100" when absent), so it's safe for any
+        # combination of has_lf_hf and is_validation. Note this combination
+        # is NOT hypothetical: UCSB validation runs (e.g. Chino Hills)
+        # genuinely have is_validation=True and has_lf_hf=False together.
         if self.is_validation:
             if self._is_gmpe:
                 tab_names.insert(2, "GMPE Comparison")
@@ -169,8 +182,8 @@ class StationDetailPanel(ctk.CTkToplevel):
                 self._build_overlay_tab()
                 self._build_rotd50_gof_tab()
 
-        # LF & HF tab — skipped for ExSIM (see tab_names above)
-        if not self.is_exsim:
+        # LF & HF tab — skipped when has_lf_hf is False (see tab_names above)
+        if self.has_lf_hf:
             self._build_lfhf_tab()
 
         self._build_rotd_combined_tab()

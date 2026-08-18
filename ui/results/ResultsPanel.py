@@ -82,6 +82,17 @@ class ResultsPanel(ctk.CTkToplevel):
         # meaning elsewhere (e.g. StationDetailPanel).
         self._has_rupture_output = self._sim_method not in ("EXSIM", "UCSB")
 
+        # Distinct question from _has_rupture_output, even though the
+        # current method set happens to give the same answer for both
+        # (EXSIM and UCSB lack both a rupture map AND a separate LF/HF
+        # split; every other method has both). Kept separate rather
+        # than reusing one flag, since a future method could plausibly
+        # have one property without the other. UCSB's Syn1D produces
+        # combined broadband output directly — no {run_id}.{sid}-lf.bbp/
+        # -hf.bbp files exist for StationDetailPanel's LF & HF tab to
+        # find, confirmed by direct inspection of a real UCSB run.
+        self._has_lf_hf_split = self._sim_method not in ("EXSIM", "UCSB")
+
         self._build_ui()
         self.after(200, self._on_ready)
         self.after(400, self._load_all)
@@ -852,5 +863,6 @@ class ResultsPanel(ctk.CTkToplevel):
             self._run_id, self._profile,
             is_validation    = self._is_validation,
             val_event_short  = self._val_event_short,
-            is_exsim         = self._is_exsim
+            is_exsim         = self._is_exsim,
+            has_lf_hf        = self._has_lf_hf_split
         )
