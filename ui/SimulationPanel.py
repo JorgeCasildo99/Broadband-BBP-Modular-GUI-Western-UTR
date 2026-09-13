@@ -111,7 +111,7 @@ class SimulationPanel(ctk.CTkToplevel):
             text_color="white"
         ).pack(side="left", padx=25, pady=15)
 
-        if self._method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB"):
+        if self._method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", "SDSU"):
             method_colors = {
                 "GP"      : ("#0a2a3a", "#3b8ed0"),
                 "EXSIM"   : ("#3a1a00", "#ffaa44"),
@@ -119,6 +119,7 @@ class SimulationPanel(ctk.CTkToplevel):
                 "IRIKURA2": ("#0a2a28", "#22ccaa"),
                 "SONG"    : ("#2a0a3a", "#8855cc"),
                 "UCSB"    : ("#3a0a20", "#cc3366"),
+                "SDSU"    : ("#12123a", "#5566ee"),
             }
             label_text = {
                 "GP"      : "GP",
@@ -127,6 +128,7 @@ class SimulationPanel(ctk.CTkToplevel):
                 "IRIKURA2": "IRIKURA 2",
                 "SONG"    : "SONG",
                 "UCSB"    : "UCSB",
+                "SDSU"    : "SDSU",
             }
             bg_color, fg_color = method_colors[self._method]
             ctk.CTkLabel(
@@ -395,6 +397,17 @@ class SimulationPanel(ctk.CTkToplevel):
         # not match BBP's actual output. Flagging as unconfirmed rather
         # than assumed correct, same status Song/IrikuraHF had before a
         # real run settled it.
+        # SDSU's BBToolbox needs NO alias, unlike UCrmg — confirmed by
+        # reasoning through the match logic below rather than a real
+        # console log: module_name.upper() gives "BBTOOLBOX", and the
+        # real SDSU console banner ("SDSU BBToolBox", from an actual
+        # CLI run) becomes "SDSUBBTOOLBOX" once uppercased and stripped
+        # of dashes/spaces — "BBTOOLBOX" is a substring of that, so
+        # plain name matching already works. The only capitalization
+        # difference ("Toolbox" vs "ToolBox") disappears once both
+        # sides are uppercased. WccSiteamp has no confirmed banner text
+        # yet (no console log has been seen reaching that step) — same
+        # unconfirmed status as Syn1D/CopySeismograms before it.
         banner_aliases = {
             "Plot_Map": ["PLOT MAP", "PLOTMAP"],
             "RotD100" : ["ROTDXX", "ROTD100"],

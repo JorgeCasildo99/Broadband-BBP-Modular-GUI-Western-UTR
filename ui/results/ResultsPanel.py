@@ -242,7 +242,7 @@ class ResultsPanel(ctk.CTkToplevel):
 
     def _detect_simulation_method(self):
         """
-        Returns "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", or "UNKNOWN".
+        Returns "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", "SDSU", or "UNKNOWN".
 
         Primary source: the "# METHOD = ..." comment appended to the
         .src file at generate-files time.
@@ -254,12 +254,12 @@ class ResultsPanel(ctk.CTkToplevel):
                 m = re.search(r'#\s*METHOD\s*=\s*(\w+)', src_content, re.IGNORECASE)
                 if m:
                     method = m.group(1).strip().upper()
-                    if method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB"):
+                    if method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", "SDSU"):
                         return method
 
         # Fallback: read from BBP's HTML report
         detected = WSLBridge.detect_simulation_method(self._run_id, self._outdata)
-        if detected in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB"):
+        if detected in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", "SDSU"):
             return detected
 
         # Final fallback: validation runs default to GP
@@ -399,7 +399,7 @@ class ResultsPanel(ctk.CTkToplevel):
         ).pack(side="left", padx=10, pady=12)
 
         # Method badge — shown for every run
-        if self._sim_method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB"):
+        if self._sim_method in ("GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", "SDSU"):
             method_colors = {
                 "GP"      : ("#0a2a3a", "#3b8ed0"),
                 "EXSIM"   : ("#3a1a00", "#ffaa44"),
@@ -407,6 +407,7 @@ class ResultsPanel(ctk.CTkToplevel):
                 "IRIKURA2": ("#0a2a28", "#22ccaa"),
                 "SONG"    : ("#2a0a3a", "#8855cc"),
                 "UCSB"    : ("#3a0a20", "#cc3366"),
+                "SDSU"    : ("#12123a", "#5566ee"),
             }
             method_labels = {
                 "GP"      : "GP",
@@ -415,6 +416,7 @@ class ResultsPanel(ctk.CTkToplevel):
                 "IRIKURA2": "IRIKURA 2",
                 "SONG"    : "SONG",
                 "UCSB"    : "UCSB",
+                "SDSU"    : "SDSU",
             }
             bg_color, fg_color = method_colors[self._sim_method]
             ctk.CTkLabel(
@@ -551,6 +553,7 @@ class ResultsPanel(ctk.CTkToplevel):
             from ui.results.Irikura2Results import Irikura2Results
             from ui.results.SongResults     import SongResults
             from ui.results.UCSBResults     import UCSBResults
+            from ui.results.SDSUResults     import SDSUResults
 
             if self._is_exsim:
                 view = ExSimResults(self)
@@ -562,6 +565,8 @@ class ResultsPanel(ctk.CTkToplevel):
                 view = SongResults(self)
             elif self._sim_method == "UCSB":
                 view = UCSBResults(self)
+            elif self._sim_method == "SDSU":
+                view = SDSUResults(self)
             else:
                 # GP and any future kinematic methods default to GPResults
                 view = GPResults(self)

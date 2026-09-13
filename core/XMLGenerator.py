@@ -50,6 +50,15 @@ UCSB_GF_FILE  = "nr02-vs500_lf.vel"
 UCSB_GF_PATH  = f"$BBP_INSTALL_GF/{VELOCITY_MODEL}/ucsb/lf/{UCSB_GF_FILE}"
 UCSB_METHOD   = "UCSB"
 
+# SDSU stages its own velocity-model text file (a plain-text .txt file,
+# unlike UCSB's binary .vel) under its own GF subdirectory (sdsu/, not
+# gp/) — confirmed against a real BBP-generated SDSU validation XML
+# (Chino Hills, run 9190258). Only BBToolbox stages this file — Genslip
+# and Jbsim are unchanged from GP and still use GF_PATH/GF_FILE.
+SDSU_GF_FILE  = "sdsu-aug2018-labasin-vmod.txt"
+SDSU_GF_PATH  = f"$BBP_INSTALL_GF/{VELOCITY_MODEL}/sdsu/{SDSU_GF_FILE}"
+SDSU_METHOD   = "SDSU"
+
 
 # ------------------------------------------------------------------
 # MODULE DEFINITIONS
@@ -397,6 +406,85 @@ def _genhtml_block_ucsb(src_path, stl_path, src_name, stl_name):
 \t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
 \t\t\t\t<argument type="NoneType">None</argument>
 \t\t\t\t<argument type="str">{UCSB_METHOD}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+# ------------------------------------------------------------------
+# SDSU MODULE DEFINITIONS
+# SDSU is a THIRD distinct pipeline shape, different from both the
+# generic rupture+LF+HF+Match pattern AND from UCSB's fully-separate
+# rupture engine. SDSU reuses GP's own Genslip and Jbsim UNCHANGED
+# (see _genslip_block/_jbsim_block above — no SDSU-specific rupture
+# or LF block needed at all), then BBToolbox replaces BOTH Hfsims AND
+# Match in a single step (there is no Match module anywhere in a real
+# SDSU pipeline — BBToolbox performs HF synthesis and LF+HF merging
+# internally). WccSiteamp then applies site amplification before the
+# shared plotting/analysis modules. All of this is confirmed against
+# a real BBP-generated SDSU validation XML (Chino Hills, run 9190258),
+# not inferred by analogy to any other method.
+# ------------------------------------------------------------------
+
+def _bbtoolbox_block(src_path, stl_path, src_name, srf_name, stl_name):
+    """BBToolbox — SDSU's high-frequency synthesis and LF+HF merge
+    module (Olsen & Takedatsu, 2015). Requires GP's own Genslip/Jbsim
+    to have already run (consumes the .srf Genslip produced). The
+    leading empty-string argument is confirmed present in the real
+    reference XML; its exact purpose is not yet confirmed against
+    BBP's source — kept as a fixed empty placeholder rather than
+    guessed at."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>BBToolbox</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{SDSU_GF_PATH}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str"></argument>
+\t\t\t\t<argument type="str">{SDSU_GF_FILE}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{srf_name}</argument>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+def _wccsiteamp_block_sdsu(stl_path, stl_name):
+    """WccSiteamp — site amplification step, run after BBToolbox and
+    before the shared plotting/analysis modules. Confirmed present
+    only in SDSU's pipeline so far in this codebase (not used by any
+    other method currently built)."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>WccSiteamp</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{SDSU_METHOD}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t</arguments>
+\t\t</BBP_Module>"""
+
+
+def _genhtml_block_sdsu(src_path, stl_path, src_name, stl_name):
+    """Same as _genhtml_block but with method argument 'SDSU' instead
+    of 'GP'. Confirmed against a real BBP-generated SDSU validation
+    XML (run 9190258)."""
+    return f"""\t\t<BBP_Module>
+\t\t\t<name>GenHTML</name>
+\t\t\t<staged_files>
+\t\t\t\t<file>{stl_path}</file>
+\t\t\t\t<file>{src_path}</file>
+\t\t\t</staged_files>
+\t\t\t<arguments>
+\t\t\t\t<argument type="str">{stl_name}</argument>
+\t\t\t\t<argument type="str">{src_name}</argument>
+\t\t\t\t<argument type="str">{VELOCITY_MODEL}</argument>
+\t\t\t\t<argument type="NoneType">None</argument>
+\t\t\t\t<argument type="str">{SDSU_METHOD}</argument>
 \t\t\t</arguments>
 \t\t</BBP_Module>"""
 
@@ -781,6 +869,72 @@ def _generate_ucsb_rupture_xml(base_name, src_path, stl_path, acc_output=False):
     return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
 
 
+def _generate_sdsu_full_xml(base_name, src_path, stl_path, acc_output=False):
+    """
+    SDSU — Full Pipeline.
+    Genslip -> Jbsim -> BBToolbox -> WccSiteamp -> Plot_Map -> PlotSeis -> RotD100 -> FAS -> GenHTML
+    Genslip and Jbsim are UNCHANGED from GP. There is no Match step —
+    BBToolbox performs HF synthesis and LF+HF merging internally.
+    NOTE: this drops the validation-only modules present in the real
+    reference XML (ObsSeismograms, CalculateGMPE, GMPEComparison,
+    GenPlots, GPGof, FASGof), which only apply to a validation run
+    against real recordings — inferred by analogy to how GP's own
+    scenario vs. validation XMLs differ, not yet confirmed against a
+    real SDSU SCENARIO XML specifically.
+    """
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+
+    modules = "\n".join([
+        _genslip_block(src_path, src_name, srf_name),
+        _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _bbtoolbox_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _wccsiteamp_block_sdsu(stl_path, stl_name),
+        _plot_map_block(src_path, stl_path, src_name, stl_name),
+        _plotseis_block(src_path, stl_path, src_name, stl_name),
+        _rotd100_block(stl_path, stl_name),
+        _fas_block(stl_path, stl_name),
+        _genhtml_block_sdsu(src_path, stl_path, src_name, stl_name),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_sdsu_quick_xml(base_name, src_path, stl_path, acc_output=False):
+    """SDSU — Quick Run (Genslip + Jbsim + BBToolbox + WccSiteamp).
+    Produces final site-amplified broadband seismograms, skips
+    plotting/analysis. NOTE: this stopping point is inferred by
+    analogy to GP/Irikura/Song's quick profile (stop right after the
+    final seismograms exist, before Plot_Map) — not confirmed against
+    a real SDSU quick-run XML, since the only reference available is
+    a full validation run."""
+    srf_name  = f"{base_name}.srf"
+    src_name  = f"{base_name}.src"
+    stl_name  = f"{base_name}.stl"
+
+    modules = "\n".join([
+        _genslip_block(src_path, src_name, srf_name),
+        _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _bbtoolbox_block(src_path, stl_path, src_name, srf_name, stl_name),
+        _wccsiteamp_block_sdsu(stl_path, stl_name),
+    ])
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
+def _generate_sdsu_rupture_xml(base_name, src_path, stl_path, acc_output=False):
+    """SDSU — Rupture Only (Genslip alone).
+    Identical rupture step to GP, since SDSU doesn't modify Genslip at
+    all — same intent as GP/Irikura/Song's rupture-only profiles."""
+    srf_name = f"{base_name}.srf"
+    src_name = f"{base_name}.src"
+
+    modules = _genslip_block(src_path, src_name, srf_name)
+
+    return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
+
+
 # ------------------------------------------------------------------
 # PUBLIC API
 # ------------------------------------------------------------------
@@ -792,11 +946,19 @@ def generate_xml(base_name, src_path, stl_path,
     Builds the BBP XML options file for the selected simulation profile.
 
     Args:
-        method (str): "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", or "UCSB"
+        method (str): "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", or "SDSU"
         profile (str): "full", "quick", "rupture", or "custom"
     """
     if method == "EXSIM":
         return _generate_exsim_xml(base_name, src_path, stl_path, acc_output)
+
+    if method == "SDSU":
+        if profile == "quick":
+            return _generate_sdsu_quick_xml(base_name, src_path, stl_path, acc_output)
+        elif profile == "rupture":
+            return _generate_sdsu_rupture_xml(base_name, src_path, stl_path, acc_output)
+        else:
+            return _generate_sdsu_full_xml(base_name, src_path, stl_path, acc_output)
 
     if method == "UCSB":
         if profile == "quick":
@@ -987,6 +1149,29 @@ BBP_MODULES_UCSB_RUPTURE = [
     ("UCrmg", "Generating rupture model (UCSB kinematic source)..."),
 ]
 
+BBP_MODULES_SDSU_FULL = [
+    ("Genslip",     "Generating slip distribution on fault plane..."),
+    ("Jbsim",       "Computing low frequency seismograms (0-1 Hz)..."),
+    ("BBToolbox",   "Computing high-frequency seismograms and merging broadband (Olsen & Takedatsu)..."),
+    ("WccSiteamp",  "Applying site amplification..."),
+    ("Plot_Map",    "Generating fault trace and station map..."),
+    ("PlotSeis",    "Plotting seismograms for all stations..."),
+    ("RotD100",     "Computing RotD50/RotD100 response spectra..."),
+    ("FAS",         "Computing Fourier Amplitude Spectra..."),
+    ("GenHTML",     "Generating HTML summary report..."),
+]
+
+BBP_MODULES_SDSU_QUICK = [
+    ("Genslip",    "Generating slip distribution on fault plane..."),
+    ("Jbsim",      "Computing low frequency seismograms (0-1 Hz)..."),
+    ("BBToolbox",  "Computing high-frequency seismograms and merging broadband (Olsen & Takedatsu)..."),
+    ("WccSiteamp", "Applying site amplification..."),
+]
+
+BBP_MODULES_SDSU_RUPTURE = [
+    ("Genslip", "Generating slip distribution on fault plane..."),
+]
+
 # Default — kept for backward compatibility with any existing imports
 BBP_MODULES = BBP_MODULES_FULL
 
@@ -1086,6 +1271,18 @@ def get_modules_for_profile(profile, custom_modules=None, method="GP"):
                     for m in custom_modules if m in all_desc]
         else:
             return BBP_MODULES_UCSB_FULL
+
+    if method == "SDSU":
+        if profile == "quick":
+            return BBP_MODULES_SDSU_QUICK
+        elif profile == "rupture":
+            return BBP_MODULES_SDSU_RUPTURE
+        elif profile == "custom" and custom_modules:
+            all_desc = {m: d for m, d in BBP_MODULES_SDSU_FULL}
+            return [(m, all_desc.get(m, f"Running {m}..."))
+                    for m in custom_modules if m in all_desc]
+        else:
+            return BBP_MODULES_SDSU_FULL
 
     # GP (default)
     if profile == "quick":

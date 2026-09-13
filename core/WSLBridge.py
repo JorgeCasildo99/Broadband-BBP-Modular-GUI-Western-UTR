@@ -932,8 +932,8 @@ class WSLBridge:
                                        $BBP_DATA_DIR/outdata/<run_id>.
 
         Returns:
-            str: "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB", or
-                 "UNKNOWN" if detection fails.
+            str: "GP", "EXSIM", "IRIKURA1", "IRIKURA2", "SONG", "UCSB",
+                 "SDSU", or "UNKNOWN" if detection fails.
         """
         if not run_id:
             return "UNKNOWN"
@@ -984,6 +984,18 @@ class WSLBridge:
                 # runs may rely on this HTML fallback more often in
                 # practice, not just for very old runs.
                 return "UCSB"
+            if "SDSU" in method:
+                # NOT confirmed against a real SDSU index.html — no
+                # such file has been available to check BBP's exact
+                # wording here, unlike the ExSIM/UCSB confirmations
+                # above. Inferred from the literal "SDSU" method
+                # argument used consistently throughout a real SDSU
+                # XML (GenHTML/GPGof/FASGof/WccSiteamp all take "SDSU"
+                # as a plain string argument) — same confidence level
+                # as the Irikura2 fallback below GP. If this ever
+                # misclassifies a real SDSU run, check the actual HTML
+                # text and adjust this condition accordingly.
+                return "SDSU"
             return method
 
         return "UNKNOWN"

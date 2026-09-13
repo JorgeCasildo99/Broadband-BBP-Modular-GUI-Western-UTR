@@ -164,6 +164,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
             "IRIKURA2": "IrikuraGenSrf",
             "SONG"    : "SongRMGSS",
             "UCSB"    : "UCrmg",
+            "SDSU"    : "Genslip",
         }
         self._rupture_key = RUPTURE_KEYS.get(method, "Genslip")
 
@@ -179,6 +180,18 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         # pattern, since it genuinely doesn't fit the fork-then-merge
         # shape every other method shares — confirmed against a real
         # BBP-generated UCSB scenario XML (run 6907992).
+        # SDSU also has no entry here, for a related but distinct
+        # reason: it DOES reuse Genslip+Jbsim unchanged (so it looked at
+        # first like it would fit this rk/hf substitution pattern), but
+        # its HF module (BBToolbox) replaces Match as well as Hfsims —
+        # there is no Match module in a real SDSU pipeline at all, and
+        # BBToolbox is followed by a WccSiteamp step with no equivalent
+        # in the generic shape. Building SDSU through this substitution
+        # pattern would have produced a "Match" box requiring
+        # "Jbsim + BBToolbox" that doesn't exist in BBP's real pipeline
+        # — so SDSU is built as its own early-return branch below,
+        # confirmed against a real BBP-generated SDSU validation XML
+        # (Chino Hills, run 9190258).
         HF_KEYS = {
             "GP"      : "Hfsims",
             "IRIKURA1": "Hfsims",
@@ -202,6 +215,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
             "IRIKURA2": "Custom Pipeline Selector — Irikura Recipe 2",
             "SONG"    : "Custom Pipeline Selector — Song RMG",
             "UCSB"    : "Custom Pipeline Selector — UCSB",
+            "SDSU"    : "Custom Pipeline Selector — SDSU",
         }
         self.title(TITLES.get(method, "Custom Pipeline Selector"))
         self.configure(fg_color="#0d0d0d")
@@ -219,6 +233,73 @@ class CustomPipelinePanel(ctk.CTkToplevel):
     def _build_modules(self):
         """Returns module definitions with the correct rupture generator
         and HF module names."""
+        if self._method == "SDSU":
+            return {
+                "Genslip": {
+                    "role"    : "Source Generator",
+                    "desc"    : "Generates slip distribution\nacross fault plane.\nProduces .srf + rupture map.\n(Unchanged from GP.)",
+                    "req_text": "Always required",
+                    "requires": [],
+                    "always"  : True,
+                },
+                "Jbsim": {
+                    "role"    : "LF Synthesis  0–1 Hz",
+                    "desc"    : "Low frequency seismograms\nusing deterministic wave\npropagation physics.\n(Unchanged from GP.)",
+                    "req_text": "Requires: Genslip",
+                    "requires": ["Genslip"],
+                    "always"  : False,
+                },
+                "BBToolbox": {
+                    "role"    : "HF Synthesis + Merge",
+                    "desc"    : "Olsen & Takedatsu (2015)\nHF synthesis, merged with\nGenslip/Jbsim's LF internally.\nNo separate Match step.",
+                    "req_text": "Requires: Genslip + Jbsim",
+                    "requires": ["Genslip", "Jbsim"],
+                    "always"  : False,
+                },
+                "WccSiteamp": {
+                    "role"    : "Site Amplification",
+                    "desc"    : "Applies site response\namplification to the\nfinal broadband seismograms.",
+                    "req_text": "Requires: BBToolbox",
+                    "requires": ["BBToolbox"],
+                    "always"  : False,
+                },
+                "Plot_Map": {
+                    "role"    : "Map — Independent",
+                    "desc"    : "Geographic station and\nfault trace map PNG.\nIndependent of LF/HF.",
+                    "req_text": "Requires: Genslip",
+                    "requires": ["Genslip"],
+                    "always"  : False,
+                },
+                "PlotSeis": {
+                    "role"    : "Seismogram Plots",
+                    "desc"    : "Velocity + acceleration\nseismogram plots per\nstation as PNG files.",
+                    "req_text": "Requires: WccSiteamp",
+                    "requires": ["WccSiteamp"],
+                    "always"  : False,
+                },
+                "RotD100": {
+                    "role"    : "Response Spectra",
+                    "desc"    : "RotD50 and RotD100\nresponse spectra for\neach station.",
+                    "req_text": "Requires: WccSiteamp",
+                    "requires": ["WccSiteamp"],
+                    "always"  : False,
+                },
+                "FAS": {
+                    "role"    : "Fourier Spectrum",
+                    "desc"    : "Fourier Amplitude\nSpectrum per station\n(NS, EW, Smoothed EAS).",
+                    "req_text": "Requires: WccSiteamp",
+                    "requires": ["WccSiteamp"],
+                    "always"  : False,
+                },
+                "GenHTML": {
+                    "role"    : "HTML Report",
+                    "desc"    : "Complete HTML summary\nreport with all results\nand linked output files.",
+                    "req_text": "Requires: WccSiteamp",
+                    "requires": ["WccSiteamp"],
+                    "always"  : False,
+                },
+            }
+
         if self._method == "UCSB":
             return {
                 "UCrmg": {
@@ -362,6 +443,19 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         }
 
     def _build_arrows(self):
+        if self._method == "SDSU":
+            return [
+                ("Genslip",   "Jbsim"),
+                ("Genslip",   "Plot_Map"),
+                ("Genslip",   "BBToolbox"),
+                ("Jbsim",     "BBToolbox"),
+                ("BBToolbox", "WccSiteamp"),
+                ("WccSiteamp", "PlotSeis"),
+                ("WccSiteamp", "RotD100"),
+                ("WccSiteamp", "FAS"),
+                ("WccSiteamp", "GenHTML"),
+            ]
+
         if self._method == "UCSB":
             return [
                 ("UCrmg", "Syn1D"),
@@ -388,6 +482,19 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         ]
 
     def _build_positions(self):
+        if self._method == "SDSU":
+            return {
+                "Genslip"    : (0.08, 0.46),
+                "Jbsim"      : (0.26, 0.28),
+                "Plot_Map"   : (0.26, 0.86),
+                "BBToolbox"  : (0.46, 0.46),
+                "WccSiteamp" : (0.64, 0.46),
+                "PlotSeis"   : (0.84, 0.16),
+                "RotD100"    : (0.84, 0.38),
+                "FAS"        : (0.84, 0.60),
+                "GenHTML"    : (0.84, 0.82),
+            }
+
         if self._method == "UCSB":
             return {
                 "UCrmg"           : (0.10, 0.46),
@@ -415,6 +522,10 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         }
 
     def _build_order(self):
+        if self._method == "SDSU":
+            return ["Genslip", "Jbsim", "BBToolbox", "WccSiteamp",
+                    "Plot_Map", "PlotSeis", "RotD100", "FAS", "GenHTML"]
+
         if self._method == "UCSB":
             return ["UCrmg", "Syn1D", "CopySeismograms",
                     "Plot_Map", "PlotSeis", "RotD100", "FAS", "GenHTML"]
@@ -465,6 +576,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
             "IRIKURA2": "Irikura Recipe 2  —  LA Basin",
             "SONG"    : "Song RMG  —  LA Basin",
             "UCSB"    : "UCSB  —  LA Basin",
+            "SDSU"    : "SDSU  —  LA Basin",
         }
         ctk.CTkLabel(
             bar,
@@ -830,6 +942,8 @@ class CustomPipelinePanel(ctk.CTkToplevel):
     def _reset_to_core(self):
         if self._method == "UCSB":
             self._selected = {"UCrmg", "Syn1D", "CopySeismograms"}
+        elif self._method == "SDSU":
+            self._selected = {"Genslip", "Jbsim", "BBToolbox", "WccSiteamp"}
         else:
             self._selected = {self._rupture_key, "Jbsim", self._hf_key, "Match"}
         self._draw_all()
