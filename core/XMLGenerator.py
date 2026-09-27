@@ -419,10 +419,24 @@ def _genhtml_block_ucsb(src_path, stl_path, src_name, stl_name):
 # or LF block needed at all), then BBToolbox replaces BOTH Hfsims AND
 # Match in a single step (there is no Match module anywhere in a real
 # SDSU pipeline — BBToolbox performs HF synthesis and LF+HF merging
-# internally). WccSiteamp then applies site amplification before the
-# shared plotting/analysis modules. All of this is confirmed against
-# a real BBP-generated SDSU validation XML (Chino Hills, run 9190258),
-# not inferred by analogy to any other method.
+# internally), followed by CopySeismograms (shared with UCSB — see
+# _copyseismograms_block above).
+# CORRECTION (confirmed against a real, successfully-completed SDSU
+# SCENARIO XML, run 9343104): earlier versions of this file used
+# WccSiteamp here instead of CopySeismograms, and omitted
+# CopySeismograms entirely — that was wrong. The only reference
+# available at the time was a VALIDATION XML (Chino Hills, run
+# 9190258), which does include WccSiteamp; it appears WccSiteamp is
+# validation-specific (site-amplification comparison against real
+# recordings) and does NOT belong in a scenario pipeline at all.
+# Running WccSiteamp on a scenario without CopySeismograms having run
+# first crashed with "TypeError: '>' not supported between instances
+# of 'NoneType' and 'int'" in wcc_siteamp.py (vs30 never got set,
+# since the step that normally prepares it never ran) — confirmed via
+# a real GUI-generated failure. WccSiteamp's block builder
+# (_wccsiteamp_block_sdsu) is left defined below in case validation-
+# mode SDSU support is added later, but is no longer used by any
+# scenario profile generator.
 # ------------------------------------------------------------------
 
 def _bbtoolbox_block(src_path, stl_path, src_name, srf_name, stl_name):
@@ -872,15 +886,14 @@ def _generate_ucsb_rupture_xml(base_name, src_path, stl_path, acc_output=False):
 def _generate_sdsu_full_xml(base_name, src_path, stl_path, acc_output=False):
     """
     SDSU — Full Pipeline.
-    Genslip -> Jbsim -> BBToolbox -> WccSiteamp -> Plot_Map -> PlotSeis -> RotD100 -> FAS -> GenHTML
+    Genslip -> Jbsim -> BBToolbox -> CopySeismograms -> Plot_Map -> PlotSeis -> RotD100 -> FAS -> GenHTML
     Genslip and Jbsim are UNCHANGED from GP. There is no Match step —
     BBToolbox performs HF synthesis and LF+HF merging internally.
-    NOTE: this drops the validation-only modules present in the real
-    reference XML (ObsSeismograms, CalculateGMPE, GMPEComparison,
-    GenPlots, GPGof, FASGof), which only apply to a validation run
-    against real recordings — inferred by analogy to how GP's own
-    scenario vs. validation XMLs differ, not yet confirmed against a
-    real SDSU SCENARIO XML specifically.
+    Confirmed EXACT, module-for-module and order-for-order, against a
+    real, successfully-completed SDSU scenario run via BBP's own CLI
+    (run 9343104) — this replaced an earlier, incorrect version of
+    this function that included WccSiteamp (validation-only, wrong
+    here) and omitted CopySeismograms (required, was missing).
     """
     srf_name  = f"{base_name}.srf"
     src_name  = f"{base_name}.src"
@@ -890,7 +903,7 @@ def _generate_sdsu_full_xml(base_name, src_path, stl_path, acc_output=False):
         _genslip_block(src_path, src_name, srf_name),
         _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
         _bbtoolbox_block(src_path, stl_path, src_name, srf_name, stl_name),
-        _wccsiteamp_block_sdsu(stl_path, stl_name),
+        _copyseismograms_block(stl_path, stl_name),
         _plot_map_block(src_path, stl_path, src_name, stl_name),
         _plotseis_block(src_path, stl_path, src_name, stl_name),
         _rotd100_block(stl_path, stl_name),
@@ -902,13 +915,14 @@ def _generate_sdsu_full_xml(base_name, src_path, stl_path, acc_output=False):
 
 
 def _generate_sdsu_quick_xml(base_name, src_path, stl_path, acc_output=False):
-    """SDSU — Quick Run (Genslip + Jbsim + BBToolbox + WccSiteamp).
-    Produces final site-amplified broadband seismograms, skips
-    plotting/analysis. NOTE: this stopping point is inferred by
-    analogy to GP/Irikura/Song's quick profile (stop right after the
-    final seismograms exist, before Plot_Map) — not confirmed against
-    a real SDSU quick-run XML, since the only reference available is
-    a full validation run."""
+    """SDSU — Quick Run (Genslip + Jbsim + BBToolbox + CopySeismograms).
+    Produces final broadband seismograms, skips plotting/analysis.
+    NOTE: this stopping point is inferred by analogy to GP/Irikura/
+    Song's quick profile (stop right after the final seismograms
+    exist, before Plot_Map) — the individual modules here ARE now
+    confirmed correct (same as the full pipeline, run 9343104), but
+    this specific 4-module cutoff point itself hasn't been tested
+    against a real SDSU quick-run XML."""
     srf_name  = f"{base_name}.srf"
     src_name  = f"{base_name}.src"
     stl_name  = f"{base_name}.stl"
@@ -917,7 +931,7 @@ def _generate_sdsu_quick_xml(base_name, src_path, stl_path, acc_output=False):
         _genslip_block(src_path, src_name, srf_name),
         _jbsim_block(src_path, stl_path, src_name, srf_name, stl_name),
         _bbtoolbox_block(src_path, stl_path, src_name, srf_name, stl_name),
-        _wccsiteamp_block_sdsu(stl_path, stl_name),
+        _copyseismograms_block(stl_path, stl_name),
     ])
 
     return f"{_xml_header(stl_path)}\n{modules}\n{_xml_footer()}"
@@ -1150,22 +1164,22 @@ BBP_MODULES_UCSB_RUPTURE = [
 ]
 
 BBP_MODULES_SDSU_FULL = [
-    ("Genslip",     "Generating slip distribution on fault plane..."),
-    ("Jbsim",       "Computing low frequency seismograms (0-1 Hz)..."),
-    ("BBToolbox",   "Computing high-frequency seismograms and merging broadband (Olsen & Takedatsu)..."),
-    ("WccSiteamp",  "Applying site amplification..."),
-    ("Plot_Map",    "Generating fault trace and station map..."),
-    ("PlotSeis",    "Plotting seismograms for all stations..."),
-    ("RotD100",     "Computing RotD50/RotD100 response spectra..."),
-    ("FAS",         "Computing Fourier Amplitude Spectra..."),
-    ("GenHTML",     "Generating HTML summary report..."),
+    ("Genslip",         "Generating slip distribution on fault plane..."),
+    ("Jbsim",           "Computing low frequency seismograms (0-1 Hz)..."),
+    ("BBToolbox",       "Computing high-frequency seismograms and merging broadband (Olsen & Takedatsu)..."),
+    ("CopySeismograms", "Preparing seismograms for analysis..."),
+    ("Plot_Map",        "Generating fault trace and station map..."),
+    ("PlotSeis",        "Plotting seismograms for all stations..."),
+    ("RotD100",         "Computing RotD50/RotD100 response spectra..."),
+    ("FAS",             "Computing Fourier Amplitude Spectra..."),
+    ("GenHTML",         "Generating HTML summary report..."),
 ]
 
 BBP_MODULES_SDSU_QUICK = [
-    ("Genslip",    "Generating slip distribution on fault plane..."),
-    ("Jbsim",      "Computing low frequency seismograms (0-1 Hz)..."),
-    ("BBToolbox",  "Computing high-frequency seismograms and merging broadband (Olsen & Takedatsu)..."),
-    ("WccSiteamp", "Applying site amplification..."),
+    ("Genslip",         "Generating slip distribution on fault plane..."),
+    ("Jbsim",           "Computing low frequency seismograms (0-1 Hz)..."),
+    ("BBToolbox",       "Computing high-frequency seismograms and merging broadband (Olsen & Takedatsu)..."),
+    ("CopySeismograms", "Preparing seismograms for analysis..."),
 ]
 
 BBP_MODULES_SDSU_RUPTURE = [

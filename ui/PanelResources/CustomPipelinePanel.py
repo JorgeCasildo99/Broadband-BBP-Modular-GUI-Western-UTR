@@ -185,13 +185,17 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         # first like it would fit this rk/hf substitution pattern), but
         # its HF module (BBToolbox) replaces Match as well as Hfsims —
         # there is no Match module in a real SDSU pipeline at all, and
-        # BBToolbox is followed by a WccSiteamp step with no equivalent
-        # in the generic shape. Building SDSU through this substitution
-        # pattern would have produced a "Match" box requiring
-        # "Jbsim + BBToolbox" that doesn't exist in BBP's real pipeline
-        # — so SDSU is built as its own early-return branch below,
-        # confirmed against a real BBP-generated SDSU validation XML
-        # (Chino Hills, run 9190258).
+        # BBToolbox is followed by a CopySeismograms step (shared with
+        # UCSB) with no equivalent in the generic shape. Building SDSU
+        # through this substitution pattern would have produced a
+        # "Match" box requiring "Jbsim + BBToolbox" that doesn't exist
+        # in BBP's real pipeline — so SDSU is built as its own
+        # early-return branch below, confirmed against a real,
+        # successfully-completed SDSU scenario run via BBP's own CLI
+        # (run 9343104). An earlier version of this branch used
+        # WccSiteamp here instead — that was based on a validation-only
+        # reference XML and turned out to be wrong for scenario runs;
+        # WccSiteamp appears to be validation-specific.
         HF_KEYS = {
             "GP"      : "Hfsims",
             "IRIKURA1": "Hfsims",
@@ -256,9 +260,9 @@ class CustomPipelinePanel(ctk.CTkToplevel):
                     "requires": ["Genslip", "Jbsim"],
                     "always"  : False,
                 },
-                "WccSiteamp": {
-                    "role"    : "Site Amplification",
-                    "desc"    : "Applies site response\namplification to the\nfinal broadband seismograms.",
+                "CopySeismograms": {
+                    "role"    : "Seismogram Finalize",
+                    "desc"    : "Splits/differentiates BBToolbox's\noutput into final velocity and\nacceleration seismograms.\nShared with UCSB.",
                     "req_text": "Requires: BBToolbox",
                     "requires": ["BBToolbox"],
                     "always"  : False,
@@ -273,29 +277,29 @@ class CustomPipelinePanel(ctk.CTkToplevel):
                 "PlotSeis": {
                     "role"    : "Seismogram Plots",
                     "desc"    : "Velocity + acceleration\nseismogram plots per\nstation as PNG files.",
-                    "req_text": "Requires: WccSiteamp",
-                    "requires": ["WccSiteamp"],
+                    "req_text": "Requires: CopySeismograms",
+                    "requires": ["CopySeismograms"],
                     "always"  : False,
                 },
                 "RotD100": {
                     "role"    : "Response Spectra",
                     "desc"    : "RotD50 and RotD100\nresponse spectra for\neach station.",
-                    "req_text": "Requires: WccSiteamp",
-                    "requires": ["WccSiteamp"],
+                    "req_text": "Requires: CopySeismograms",
+                    "requires": ["CopySeismograms"],
                     "always"  : False,
                 },
                 "FAS": {
                     "role"    : "Fourier Spectrum",
                     "desc"    : "Fourier Amplitude\nSpectrum per station\n(NS, EW, Smoothed EAS).",
-                    "req_text": "Requires: WccSiteamp",
-                    "requires": ["WccSiteamp"],
+                    "req_text": "Requires: CopySeismograms",
+                    "requires": ["CopySeismograms"],
                     "always"  : False,
                 },
                 "GenHTML": {
                     "role"    : "HTML Report",
                     "desc"    : "Complete HTML summary\nreport with all results\nand linked output files.",
-                    "req_text": "Requires: WccSiteamp",
-                    "requires": ["WccSiteamp"],
+                    "req_text": "Requires: CopySeismograms",
+                    "requires": ["CopySeismograms"],
                     "always"  : False,
                 },
             }
@@ -449,11 +453,11 @@ class CustomPipelinePanel(ctk.CTkToplevel):
                 ("Genslip",   "Plot_Map"),
                 ("Genslip",   "BBToolbox"),
                 ("Jbsim",     "BBToolbox"),
-                ("BBToolbox", "WccSiteamp"),
-                ("WccSiteamp", "PlotSeis"),
-                ("WccSiteamp", "RotD100"),
-                ("WccSiteamp", "FAS"),
-                ("WccSiteamp", "GenHTML"),
+                ("BBToolbox", "CopySeismograms"),
+                ("CopySeismograms", "PlotSeis"),
+                ("CopySeismograms", "RotD100"),
+                ("CopySeismograms", "FAS"),
+                ("CopySeismograms", "GenHTML"),
             ]
 
         if self._method == "UCSB":
@@ -484,15 +488,15 @@ class CustomPipelinePanel(ctk.CTkToplevel):
     def _build_positions(self):
         if self._method == "SDSU":
             return {
-                "Genslip"    : (0.08, 0.46),
-                "Jbsim"      : (0.26, 0.28),
-                "Plot_Map"   : (0.26, 0.86),
-                "BBToolbox"  : (0.46, 0.46),
-                "WccSiteamp" : (0.64, 0.46),
-                "PlotSeis"   : (0.84, 0.16),
-                "RotD100"    : (0.84, 0.38),
-                "FAS"        : (0.84, 0.60),
-                "GenHTML"    : (0.84, 0.82),
+                "Genslip"         : (0.08, 0.46),
+                "Jbsim"           : (0.26, 0.28),
+                "Plot_Map"        : (0.26, 0.86),
+                "BBToolbox"       : (0.46, 0.46),
+                "CopySeismograms" : (0.64, 0.46),
+                "PlotSeis"        : (0.84, 0.16),
+                "RotD100"         : (0.84, 0.38),
+                "FAS"             : (0.84, 0.60),
+                "GenHTML"         : (0.84, 0.82),
             }
 
         if self._method == "UCSB":
@@ -523,7 +527,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
 
     def _build_order(self):
         if self._method == "SDSU":
-            return ["Genslip", "Jbsim", "BBToolbox", "WccSiteamp",
+            return ["Genslip", "Jbsim", "BBToolbox", "CopySeismograms",
                     "Plot_Map", "PlotSeis", "RotD100", "FAS", "GenHTML"]
 
         if self._method == "UCSB":
@@ -943,7 +947,7 @@ class CustomPipelinePanel(ctk.CTkToplevel):
         if self._method == "UCSB":
             self._selected = {"UCrmg", "Syn1D", "CopySeismograms"}
         elif self._method == "SDSU":
-            self._selected = {"Genslip", "Jbsim", "BBToolbox", "WccSiteamp"}
+            self._selected = {"Genslip", "Jbsim", "BBToolbox", "CopySeismograms"}
         else:
             self._selected = {self._rupture_key, "Jbsim", self._hf_key, "Match"}
         self._draw_all()
