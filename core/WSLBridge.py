@@ -1,6 +1,8 @@
 import subprocess
 import platform
 
+from core import WSLRuntime, WSLShell
+
 
 class WSLBridge:
     """
@@ -17,6 +19,9 @@ class WSLBridge:
     - If the project is ever moved to a native Linux machine, only this
       file needs to change (see IS_WINDOWS flag below).
     - Every other module (AppConfig, RupturePanel, etc.) stays untouched.
+
+    Windows-specific behavior (distro choice, UTF-8 decoding, hidden
+    console windows, shell mode, saved settings) lives in WSLRuntime.
     """
 
     # Detect if we are running on Windows (WSL needed) or native Linux
@@ -27,6 +32,16 @@ class WSLBridge:
     # Dynamically resolved from WSL home at first use.
     BBP_ENV_PATH = ""
 
+    # Answers that cannot change during a session. Each uncached call
+    # costs a wsl.exe launch, and the project asks for these ~25 times.
+    _CACHEABLE_QUERIES = ("echo $HOME", "echo $BBP_DATA_DIR")
+    _query_cache = {}
+
+    @classmethod
+    def clear_query_cache(cls):
+        """Forget cached answers (distro, shell mode or BBP env changed)."""
+        cls._query_cache.clear()
+
     @classmethod
     def _get_bbp_env_path(cls):
         """
@@ -34,8 +49,12 @@ class WSLBridge:
         from the WSL home directory if not already set.
         """
         if not cls.BBP_ENV_PATH:
-            home = cls.get_wsl_home()
-            cls.BBP_ENV_PATH = f"{home}/bbp_env/bin/activate"
+            saved = WSLRuntime.load_config().get("bbp_activate")
+            if saved:
+                cls.BBP_ENV_PATH = saved
+            else:
+                home = cls.get_wsl_home()
+                cls.BBP_ENV_PATH = f"{home}/bbp_env/bin/activate"
         return cls.BBP_ENV_PATH
 
     @classmethod
@@ -76,19 +95,36 @@ class WSLBridge:
             print(result.stdout)  # /home/username
         """
         try:
-            if cls.IS_WINDOWS:
-                # Run inside WSL from Windows
-                full_cmd = ["wsl", "bash", "-c", cmd]
-            else:
-                # Run directly in bash on native Linux
-                full_cmd = ["bash", "-c", cmd]
+            key = cmd.strip()
+            cacheable = (input_data is None and capture
+                         and key in cls._CACHEABLE_QUERIES)
+            if cacheable and key in cls._query_cache:
+                return cls._query_cache[key]
+
+            # Fast path: a long-lived shell avoids the ~100 ms wsl.exe
+            # launch. Returns None whenever it can't help (not Windows,
+            # busy, disabled), and the normal path below takes over.
+            if capture and input_data is None:
+                fast = WSLShell.run(cmd)
+                if fast is not None:
+                    if (cacheable and fast.returncode == 0
+                            and (fast.stdout or "").strip()):
+                        cls._query_cache[key] = fast
+                    return fast
+
+            # WSLRuntime targets the chosen distro through wsl.exe on
+            # Windows, or runs bash directly on native Linux.
+            full_cmd = WSLRuntime.build_command(cmd)
 
             result = subprocess.run(
                 full_cmd,
                 input=input_data,
                 capture_output=capture,
-                text=True
+                **WSLRuntime.subprocess_kwargs(has_input=input_data is not None)
             )
+            if (cacheable and result.returncode == 0
+                    and (result.stdout or "").strip()):
+                cls._query_cache[key] = result
             return result
 
         except FileNotFoundError:
@@ -129,28 +165,34 @@ class WSLBridge:
             return True, "Native Linux"
 
         try:
+            # Pick (and remember) which installed distro to use. A
+            # machine with WSL but no Linux distribution cannot run BBP.
+            distro = WSLRuntime.initialize()
+            cls.clear_query_cache()
+            WSLShell.reset()
+            if not distro:
+                return False, "No Linux distribution found in WSL"
+            label = f" ({distro})"
+
+            # `wsl --version` prints UTF-16, so read bytes and decode.
             result = subprocess.run(
-                ["wsl", "--version"],
+                ["wsl.exe", "--version"],
                 capture_output=True,
-                text=True,
-                timeout=10
+                stdin=subprocess.DEVNULL,
+                timeout=10,
+                **WSLRuntime.hidden_window_kwargs()
             )
 
             if result.returncode == 0:
-                # Extract a short version string from the output
-                lines = result.stdout.strip().splitlines()
+                text = WSLRuntime.decode_wsl_output(result.stdout).strip()
+                lines = text.splitlines()
                 version = lines[0] if lines else "WSL Available"
-                return True, version
+                return True, version + label
             else:
-                # wsl --version failed, try a simple echo as fallback
-                fallback = subprocess.run(
-                    ["wsl", "echo", "ok"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
+                # wsl --version failed (older WSL), try a simple echo
+                fallback = cls.run_command("echo ok")
                 if fallback.returncode == 0:
-                    return True, "WSL Available"
+                    return True, "WSL Available" + label
                 return False, "WSL not responding"
 
         except FileNotFoundError:
@@ -166,6 +208,69 @@ class WSLBridge:
 
     @classmethod
     def check_bbp_environment(cls):
+        """
+        Checks BBP and, if the first attempt fails, tries to repair the
+        connection automatically before reporting failure:
+
+          1. Windows only: retry with an interactive shell (`bash -ic`),
+             because `bash -c` skips ~/.bashrc where BBP_DIR and
+             BBP_DATA_DIR are usually exported.
+          2. Look for the Python environment that actually provides
+             run_bbp.py, in case it is not at ~/bbp_env.
+
+        Whatever works is saved to the user's config so later launches
+        skip the search. If nothing works, the status of the first
+        (default) attempt is returned so its details are what the user
+        sees. Returns the same dict as _probe_bbp_environment().
+        """
+        first_status = cls._probe_bbp_environment()
+        if first_status["connected"]:
+            return first_status
+
+        original_flags = WSLRuntime.get_shell_flags()
+        original_env   = cls.BBP_ENV_PATH
+
+        flag_options = [original_flags]
+        if cls.IS_WINDOWS and original_flags != "-ic":
+            flag_options.append("-ic")
+
+        for flags in flag_options:
+            WSLRuntime.set_shell_flags(flags)
+
+            if flags != original_flags:
+                status = cls._probe_bbp_environment()
+                if status["connected"]:
+                    WSLRuntime.remember(shell_flags=flags)
+                    cls._finish_interactive_repair(flags)
+                    return status
+
+            detected = WSLRuntime.detect_bbp_activate(cls.run_command)
+            if detected and detected != cls._get_bbp_env_path():
+                cls.BBP_ENV_PATH = detected
+                status = cls._probe_bbp_environment()
+                if status["connected"]:
+                    WSLRuntime.remember(shell_flags=flags, bbp_activate=detected)
+                    cls._finish_interactive_repair(flags)
+                    return status
+                cls.BBP_ENV_PATH = original_env
+
+        WSLRuntime.set_shell_flags(original_flags)
+        return first_status
+
+    @classmethod
+    def _finish_interactive_repair(cls, flags):
+        """
+        Interactive mode works but reloads ~/.bashrc on every call, which
+        is slow. Capture its BBP environment once so later calls can use
+        a fast plain shell, and drop any answers cached before the repair.
+        """
+        if flags == "-ic":
+            WSLRuntime.capture_env_preamble()
+        cls.clear_query_cache()
+        WSLShell.reset()
+
+    @classmethod
+    def _probe_bbp_environment(cls):
         """
         Checks whether BBP is properly installed and configured inside WSL.
         Replaces the original shutil.which() + os.environ approach which
@@ -217,6 +322,31 @@ class WSLBridge:
             "version"   : version,
             "details"   : details
         }
+
+    # ------------------------------------------------------------------
+    # WINDOWS PATH -> WSL PATH
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def windows_to_wsl_path(cls, path):
+        """
+        Converts a Windows path (e.g. from a file dialog) into the WSL
+        path of the same file, using `wslpath` inside the chosen distro.
+        Panels must call this instead of invoking wsl.exe themselves, so
+        the distro choice and hidden-window settings are always applied.
+        On native Linux the path is returned unchanged.
+
+        Returns:
+            tuple: (bool: success, str: wsl_path or error_message)
+        """
+        if not cls.IS_WINDOWS:
+            return True, path
+        safe = path.replace("'", "'\\''")
+        result = cls.run_command(f"wslpath -u '{safe}'")
+        out = (result.stdout or "").strip()
+        if result.returncode == 0 and out:
+            return True, out
+        return False, (result.stderr or "wslpath failed").strip()
 
     # ------------------------------------------------------------------
     # WSL HOME DIRECTORY
@@ -322,16 +452,14 @@ class WSLBridge:
             # \n → \r\n, which breaks Fortran file readers in ExSIM/BBP.
             content_bytes = content.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
 
-            if cls.IS_WINDOWS:
-                full_cmd = ["wsl", "bash", "-c", f"cat > '{wsl_path}'"]
-            else:
-                full_cmd = ["bash", "-c", f"cat > '{wsl_path}'"]
+            full_cmd = WSLRuntime.build_command(f"cat > '{wsl_path}'")
 
             result = subprocess.run(
                 full_cmd,
                 input=content_bytes,
                 capture_output=True,
-                text=False
+                text=False,
+                **WSLRuntime.hidden_window_kwargs()
             )
 
             if result.returncode != 0:
@@ -583,20 +711,18 @@ class WSLBridge:
                 # folder BBP will create (newest after run completes)
                 bbp_cmd = cls._bbp_cmd(xml_path)
 
-                if cls.IS_WINDOWS:
-                    full_cmd = ["wsl", "bash", "-c", bbp_cmd]
-                else:
-                    full_cmd = ["bash", "-c", bbp_cmd]
+                full_cmd = WSLRuntime.build_command(bbp_cmd)
 
                 process = subprocess.Popen(
                     full_cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    text=True
+                    **WSLRuntime.subprocess_kwargs()
                 )
 
                 for line in process.stdout:
-                    on_output(line)
+                    if not WSLRuntime.is_shell_noise(line):
+                        on_output(line)
 
                 process.wait()
                 success = process.returncode == 0
@@ -659,20 +785,18 @@ class WSLBridge:
                     f"echo -e '{answers.strip()}' | run_bbp.py"
                 )
 
-                if cls.IS_WINDOWS:
-                    full_cmd = ["wsl", "bash", "-c", bbp_cmd]
-                else:
-                    full_cmd = ["bash", "-c", bbp_cmd]
+                full_cmd = WSLRuntime.build_command(bbp_cmd)
 
                 process = subprocess.Popen(
                     full_cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    text=True
+                    **WSLRuntime.subprocess_kwargs()
                 )
 
                 for line in process.stdout:
-                    on_output(line)
+                    if not WSLRuntime.is_shell_noise(line):
+                        on_output(line)
 
                 process.wait()
 

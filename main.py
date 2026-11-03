@@ -13,6 +13,11 @@ sys.path.insert(0, os.path.join(BASE_DIR, "ui", "GravesAndPitarka"))  # bbp_gui/
 sys.path.insert(0, os.path.join(BASE_DIR, "ui", "ExSIM"))           # bbp_gui/ui/ExSIM/
 sys.path.insert(0, os.path.join(BASE_DIR, "ui", "results"))        # bbp_gui/ui/results/
 
+# A windowed .exe has no console, so tracebacks would vanish. This sends
+# them to %APPDATA%\BBP-GUI\bbp-gui.log (no-op when a console exists).
+from core import WSLRuntime
+WSLRuntime.redirect_output_to_log()
+
 # --- CORE IMPORTS ---
 # AppConfig and WSLBridge live in bbp_gui/core/
 from core.AppConfig import AppConfig
@@ -37,6 +42,25 @@ from ui.ConfigurationPanel          import ConfigurationPanel
 from ui.ValidationPanel             import ValidationPanel
 
 
+def _apply_ui_scale(window):
+    """
+    Keeps the layout at its design size on Windows. CustomTkinter scales
+    every widget by the monitor's display scale (125%, 150%...), which
+    WSLg never did, so without this everything looks too big. The factor
+    is computed by WSLRuntime.ui_scale(); set "ui_scale" in
+    %APPDATA%\\BBP-GUI\\config.json to make the interface larger/smaller.
+    """
+    try:
+        dpi_scale = ctk.ScalingTracker.get_window_dpi_scaling(window)
+    except Exception:
+        dpi_scale = window.winfo_fpixels("1i") / 96.0
+    factor = WSLRuntime.ui_scale(dpi_scale)
+    if abs(factor - 1.0) > 0.01:
+        ctk.set_widget_scaling(factor)
+        ctk.set_window_scaling(factor)
+    print(f"[BBP-GUI] display scale {dpi_scale:.2f} -> CustomTkinter scaling {factor:.2f}")
+
+
 class MainPanel(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -44,6 +68,7 @@ class MainPanel(ctk.CTk):
         # --- FORCE DARK THEME ---
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
+        _apply_ui_scale(self)
 
         self.title("BBP Modular Interface - Research System")
         self.minsize(1000, 750)
@@ -149,9 +174,10 @@ class MainPanel(ctk.CTk):
                 text_color=res.COLOR_ERROR
             )
             self.show_error(
-                "WSL NOT DETECTED\n"
-                "Please install WSL and ensure it is accessible.\n"
-                "Run: wsl --install in PowerShell as Administrator."
+                f"WSL NOT DETECTED\n"
+                f"Details: {wsl_version}\n"
+                f"Please install WSL with an Ubuntu distribution and ensure it is accessible.\n"
+                f"Run: wsl --install -d Ubuntu in PowerShell as Administrator."
             )
 
     def step_1_check_bbp(self):

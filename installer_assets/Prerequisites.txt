@@ -1,0 +1,182 @@
+BBP-GUI - before you install
+=============================
+
+BBP-GUI is a graphical interface for the SCEC Broadband Platform (BBP)
+v22.4.0. This installer installs the interface only. It does NOT include
+BBP, which runs inside Windows Subsystem for Linux (WSL). If WSL and BBP
+are not installed yet, follow Part 1 and Part 2 below first, then run
+this installer.
+
+
+DEVELOPERS AND CONTACT
+
+  Main developer:         Jorge Isaias Casildo Camacho
+                          Email: st4093@utr.edu.mx
+
+  Supervising developer:  Dr. Hadi Ghofrani
+                          Email: hghofrani@gmail.com
+
+
+WHAT YOU NEED (SUMMARY)
+
+  - Windows 10 (version 2004, build 19041, or newer) or Windows 11, 64-bit.
+  - WSL 2 with Ubuntu. BBP-GUI was developed and tested with Ubuntu 24.
+  - BBP v22.4.0 with the LA Basin region, installed in your Ubuntu home
+    folder (Part 2).
+  - Free disk space on drive C: the LA Basin region alone is 25 GB (figure
+    given by the BBP install script). Keep at least 60 GB free as a safe
+    margin: every download is unpacked before it is deleted.
+  - Time: Part 1 takes about 15 minutes. Part 2 can take several hours,
+    mostly downloading and compiling.
+
+
+PART 1 - INSTALL WSL 2 AND UBUNTU
+
+  1. Check your Windows version. Press Win+R, type  winver  and press
+     Enter. You need version 2004 (OS build 19041) or newer, or Windows 11.
+
+  2. Check that virtualization is enabled. Open Task Manager (Ctrl+Shift+
+     Esc) > Performance > CPU. The line "Virtualization" must say
+     "Enabled". If it says "Disabled", restart the computer, open the
+     BIOS/UEFI setup (usually by pressing F2, F10, Del or Esc while it
+     starts) and enable "Intel Virtualization Technology (VT-x)" or
+     "AMD-V / SVM Mode".
+
+  3. Open PowerShell as administrator: click Start, type PowerShell,
+     right-click "Windows PowerShell" and choose "Run as administrator".
+
+  4. Type this command and press Enter:
+         wsl --install -d Ubuntu
+     Wait until the download finishes. Restart the computer if asked.
+
+  5. After the restart an Ubuntu window opens (if not, open "Ubuntu" from
+     the Start menu). Wait until it asks for a username and a password.
+     Use a short lowercase username without spaces, and remember the
+     password: Ubuntu asks for it whenever a command starts with "sudo".
+
+  6. Check the result. In PowerShell run:
+         wsl -l -v
+     The Ubuntu line must show VERSION 2. If it shows 1, run:
+         wsl --set-version Ubuntu 2
+     BBP-GUI uses your default WSL distribution (the line marked with *).
+     If another one is the default, run:  wsl --set-default Ubuntu
+
+  7. In the Ubuntu window, update the system:
+         sudo apt update && sudo apt upgrade -y
+
+  If something goes wrong:
+  - Error 0x80370102 or "virtualization is not enabled": repeat step 2.
+  - "wsl --install" only prints a help text: update Windows (Settings >
+    Windows Update), restart, and try again.
+
+
+PART 2 - INSTALL THE BROADBAND PLATFORM (BBP) v22.4.0
+
+  Type every command of this part in the UBUNTU window, not in PowerShell.
+  To paste text into the Ubuntu window, right-click inside it. Official
+  BBP documentation: https://github.com/SCECcode/bbp/wiki/Installation
+
+  IMPORTANT: BBP-GUI expects BBP's folders directly in your Ubuntu home
+  folder: ~/bbp-22.4.0, ~/bbp_gf, ~/bbp_val and ~/bbp_data. Follow the
+  steps below exactly. The BBP wiki example installs into a subfolder
+  (~/bbp), which BBP-GUI does not support.
+
+  2.1  Install the build tools (the command asks for your Ubuntu password):
+         sudo apt install -y build-essential gfortran git curl wget tar python3 python3-venv python3-dev python3-pip
+
+  2.2  Create the Python environment that BBP will use. Ubuntu 24 does not
+       allow installing Python packages system-wide, so a virtual
+       environment is required:
+         python3 -m venv ~/bbp_env
+         source ~/bbp_env/bin/activate
+         pip install --upgrade pip
+         pip install "matplotlib>=3.3.0" "numpy>=1.18.5,<2" "scipy>=1.4.1" "pyproj>=2.6.1" "numba>=0.55.2"
+
+       Keep the quotation marks. Without them Ubuntu reads ">" as a
+       redirect and creates stray files named like "=1.18.5" in your home
+       folder. NumPy must stay below version 2 (see "Known problems").
+
+  2.3  Download and unpack BBP v22.4.0 (about 90 MB) into your home folder:
+         cd ~
+         curl -L -o bbp-22.4.0.tar.gz https://github.com/SCECcode/bbp/archive/refs/tags/v22.4.0.tar.gz
+         tar -xzf bbp-22.4.0.tar.gz
+         ls ~/bbp-22.4.0
+       The last command must list, among others, the folders "bbp" and
+       "setup".
+
+  2.4  Run the BBP installer. The Python environment from step 2.2 must be
+       active (if you closed the window, run  source ~/bbp_env/bin/activate
+       first):
+         cd ~/bbp-22.4.0/setup
+         bash easy_install_bbp_22.4.0.sh
+       The first lines it prints must say "Using destination directory:"
+       followed by your home folder (for example /home/yourname). If it
+       shows anything else, press Ctrl+C and repeat step 2.3 in your home
+       folder.
+       The script builds the FFTW library and the BBP programs by itself,
+       then asks which regions to install: type 1 for Yes or 2 for No.
+       Answer 1 for the LA BASIN region (25 GB). BBP-GUI uses only that
+       region. The other regions (14 to 27 GB each) are optional.
+       This step can take several hours. Keep the computer awake and do not
+       close the window until it prints "All Done!".
+
+  2.5  Make BBP available in every Ubuntu session. At the end the script
+       prints a block that starts with "Please add the following lines to
+       your bash_profile". Copy those lines into the file ~/.bashrc (not
+       .bash_profile: BBP-GUI reads .bashrc). Open it with:
+         nano ~/.bashrc
+       Press Ctrl+End to go to the end of the file, paste the lines
+       (right-click), save with Ctrl+O then Enter, and exit with Ctrl+X.
+       Use the lines exactly as the script printed them. They look like
+       this example (with your own username):
+         export BBP_DIR=/home/yourname/bbp-22.4.0/bbp
+         export BBP_GF_DIR=/home/yourname/bbp_gf
+         export BBP_VAL_DIR=/home/yourname/bbp_val
+         export PYTHONPATH=/home/yourname/bbp-22.4.0/bbp/comps:/home/yourname/bbp-22.4.0/bbp/comps/PySeismoSoil:$PYTHONPATH
+         export BBP_DATA_DIR=/home/yourname/bbp_data
+         export PATH=/home/yourname/bbp-22.4.0/bbp/comps:/home/yourname/bbp-22.4.0/bbp/utils/batch:$PATH
+         ulimit -s unlimited
+
+  2.6  Check the installation. Close the Ubuntu window, open it again and
+       run:
+         echo $BBP_DIR
+         which run_bbp.py
+       Both commands must print a path. BBP-GUI performs the same check
+       when it starts. (The BBP developers also provide tests, which need
+       the LA Basin region: https://github.com/SCECcode/bbp/wiki/Running-Tests)
+
+
+KNOWN PROBLEMS WITH BBP v22.4.0
+
+  1. NumPy 2 removed the function numpy.mat, which BBP uses in
+     bbp/comps/geobb_srf.py. Installing NumPy below version 2, as in step
+     2.2, avoids this.
+
+  2. Two defects in the file bbp/src/sdsu/bbtoolbox/ray3DJHfor.c affect the
+     SDSU method. SCEC has not corrected this file in its current
+     development version. The corrected file and instructions are
+     available from the developers (see the emails above).
+
+
+STARTING THE PROGRAM
+
+  BBP-GUI checks WSL and BBP when it starts and shows a clear message if
+  something is missing. The first start can take a few seconds longer while
+  it finds your BBP environment; it remembers what it found.
+
+
+WHERE THINGS ARE KEPT
+
+  Settings and the log file: %APPDATA%\BBP-GUI   (bbp-gui.log is the first
+  place to look if something goes wrong). Your simulation files stay inside
+  WSL, in your Ubuntu home folder, and are never touched by this installer
+  or by the uninstaller.
+
+  To uninstall: Windows Settings > Apps > BBP-GUI > Uninstall. This does not
+  remove WSL, Ubuntu or BBP.
+
+
+WINDOWS SECURITY WARNING
+
+  This installer is not digitally signed, so Windows SmartScreen may say
+  "Windows protected your PC". Choose "More info", then "Run anyway".
